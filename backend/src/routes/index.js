@@ -8,9 +8,9 @@ const router = express.Router();
 // Controllers
 const authController = require('../controllers/authController');
 const userController = require('../controllers/userController');
-const sessionController = require('../controllers/sessionController');
-const messageController = require('../controllers/messageController');
-const webhookController = require('../controllers/webhookController');
+const sessionController = require('../controllers/sessionController.evolution');
+const messageController = require('../controllers/messageController.evolution');
+const webhookController = require('../controllers/webhookController.evolution');
 
 // Middlewares
 const { authenticate, isAdmin, isSuperAdmin } = require('../middlewares/auth');
@@ -32,7 +32,8 @@ router.post('/auth/login', validateLogin, authController.login);
 router.post('/auth/refresh', authController.refreshToken);
 
 // Webhooks (no auth - validated by webhook secret)
-router.post('/webhooks/waha', webhookController.handleWahaWebhook);
+router.post('/webhooks/evolution', webhookController.handleEvolutionWebhook);
+router.get('/webhooks/health', webhookController.webhookHealth);
 
 // ===== Protected Routes (require authentication) =====
 
@@ -55,8 +56,9 @@ router.post('/users/:userId/reactivate', isAdmin, userController.reactivateUser)
 
 router.post('/sessions', isAdmin, validateCreateSession, sessionController.createSession);
 router.get('/sessions', sessionController.getSessions);
-router.get('/sessions/:sessionId/qr', sessionController.getQRCode);
-router.post('/sessions/:sessionId/pairing-code', validateRequestPairingCode, sessionController.requestPairingCode);
+router.get('/sessions/:sessionId', sessionController.getSessionDetails);
+router.get('/sessions/:sessionId/qr', sessionController.getSessionQRCode);
+router.post('/sessions/:sessionId/pairing-code', validateRequestPairingCode, sessionController.requestSessionPairingCode);
 router.post('/sessions/:sessionId/assign', isAdmin, validateAssignSession, sessionController.assignSession);
 router.delete('/sessions/:sessionId', isAdmin, sessionController.deleteSession);
 
