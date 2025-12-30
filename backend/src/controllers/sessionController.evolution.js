@@ -517,6 +517,184 @@ async function checkSessionAccess(sessionId, profile) {
   return false;
 }
 
+/**
+ * Reconnect a disconnected session
+ * POST /api/sessions/:sessionId/reconnect
+ * Returns QR code or pairing code for reconnection
+ */
+async function reconnectSession(req, res) {
+  try {
+    const { sessionId } = req.params;
+    const { method = 'qr' } = req.body; // 'qr' or 'pairing'
+
+    // Get session
+    const { data: session, error: sessionError } = await supabaseAdmin
+      .from('sessions')
+      .select('*')
+      .eq('id', sessionId)
+      .single();
+
+    if (sessionError || !session) {
+      return res.status(404).json({
+        error: 'Not Found',
+        message: 'Session not found'
+      });
+    }
+
+    console.log(`[Session] Reconnecting session: ${session.session_name} using ${method}`);
+
+    // Check current Evolution API status
+    try {
+      const status = await getInstanceStatus(session.session_name);
+
+      if (status.state === 'open') {
+        return res.json({
+          success: true,
+          message: 'Session already connected',
+          status: 'CONNECTED'
+        });
+      }
+    } catch (error) {
+      // Instance might not exist, will recreate
+      console.log('[Session] Instance not found, recreating...');
+    }
+
+    // Recreate instance if needed
+    try {
+      await createInstance(session.session_name);
+
+      // Set webhook
+      const webhookUrl = process.env.WEBHOOK_BASE_URL
+        ? `${process.env.WEBHOOK_BASE_URL}/api/webhooks/evolution`
+        : `${process.env.API_BASE_URL}/api/webhooks/evolution`;
+
+      await setWebhook(
+        session.session_name,
+        webhookUrl,
+        [
+          'QRCODE_UPDATED',
+          'CONNECTION_UPDATE',
+          'MESSAGES_SET',
+          'MESSAGES_UPSERT',
+          'MESSAGES_UPDATE',
+          'MESSAGES_DELETE',
+          'SEND_MESSAGE',
+          'CONTACTS_SET',
+          'CONTACTS_UPSERT',
+          'CONTACTS_UPDATE',
+          'CHATS_SET',
+          'CHATS_UPSERT',
+          'CHATS_UPDATE',
+          'CHATS_DELETE'
+        ]
+      );
+    } catch (createError) {
+      console.error('[Session] Instance recreation error:', createError);
+      // Continue anyway - instance might already exist
+    }
+
+    // Get QR code or pairing code based on method
+    if (method === 'pairing') {
+      // Pairing code method
+      const phone = req.body.phone;
+
+      if (!phone) {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: 'Phone number required for pairing method'
+        });
+      }
+
+      const pairingData = await requestPairingCode(session.session_name, phone);
+
+      return res.json({
+        success: true,
+        method: 'pairing',
+        data: {
+          code: pairingData.code,
+          phone: phone
+        }
+      });
+    } else {
+      // QR code method (default)
+      const qrData = await getQRCode(session.session_name);
+
+      return res.json({
+        success: true,
+        method: 'qr',
+        data: {
+          qrcode: qrData.base64 || qrData.code,
+          pairingCode: qrData.pairingCode
+        }
+      });
+    }
+  } catch (error) {
+    console.error('[Session] Reconnect error:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Failed to reconnect session'
+    });
+  }
+}
+
+/**
+ * Trigger gap-fill sync (pull missed messages)
+ * POST /api/sessions/:sessionId/gap-fill
+ * Optional feature to sync messages missed during disconnect
+ */
+async function triggerGapFillSync(req, res) {
+  try {
+    const { sessionId } = req.params;
+
+    // Get session
+    const { data: session, error: sessionError } = await supabaseAdmin
+      .from('sessions')
+      .select('*')
+      .eq('id', sessionId)
+      .single();
+
+    if (sessionError || !session) {
+      return res.status(404).json({
+        error: 'Not Found',
+        message: 'Session not found'
+      });
+    }
+
+    // Check if session is connected
+    if (session.status !== 'CONNECTED') {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Session must be connected to sync messages'
+      });
+    }
+
+    console.log(`[Session] Gap-fill sync requested for: ${session.session_name}`);
+
+    // Import and trigger gap-fill sync
+    const { triggerGapFillSync: doGapFill } = require('../services/syncService.evolution');
+
+    // Start sync in background
+    doGapFill(session.id).then(() => {
+      console.log(`[Session] Gap-fill sync completed for: ${session.session_name}`);
+    }).catch(error => {
+      console.error('[Session] Gap-fill sync error:', error);
+    });
+
+    // Return immediately
+    res.json({
+      success: true,
+      message: 'Gap-fill sync started. This may take a few minutes depending on message volume.',
+      status: 'syncing'
+    });
+  } catch (error) {
+    console.error('[Session] Gap-fill trigger error:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Failed to trigger gap-fill sync'
+    });
+  }
+}
+
 module.exports = {
   createSession,
   getSessions,
@@ -524,5 +702,7 @@ module.exports = {
   requestSessionPairingCode,
   assignSession,
   deleteSession,
-  getSessionDetails
+  getSessionDetails,
+  reconnectSession,
+  triggerGapFillSync
 };

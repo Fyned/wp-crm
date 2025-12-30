@@ -60,6 +60,7 @@ router.get('/sessions', sessionController.getSessions);
 router.get('/sessions/:sessionId', sessionController.getSessionDetails);
 router.get('/sessions/:sessionId/qr', sessionController.getSessionQRCode);
 router.post('/sessions/:sessionId/pairing-code', validateRequestPairingCode, sessionController.requestSessionPairingCode);
+router.post('/sessions/:sessionId/reconnect', sessionController.reconnectSession); // NEW: Reconnect disconnected session
 router.post('/sessions/:sessionId/assign', isAdmin, validateAssignSession, sessionController.assignSession);
 router.delete('/sessions/:sessionId', isAdmin, sessionController.deleteSession);
 
