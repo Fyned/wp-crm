@@ -1,31 +1,59 @@
 /**
- * Media Service
- * Handles media download from WAHA and upload to Supabase Storage
+ * Professional Media Service for Evolution API
+ * Handles ALL media types: images, videos, audio, documents (PDF, Word, Excel, etc.)
+ * Downloads from Evolution API → Uploads to Supabase Storage
  */
 
 const axios = require('axios');
 const { supabaseAdmin } = require('../config/database');
-const wahaClient = require('../config/waha');
+const evolutionClient = require('../config/evolution');
 const path = require('path');
 
 /**
- * Download media from WAHA and upload to Supabase Storage
+ * Download media from Evolution API and upload to Supabase Storage
+ * Supports: Images, Videos, Audio, Documents (PDF, Word, Excel, PPT, etc.)
  */
-async function downloadAndUploadMedia(messageId, mediaUrl, messageData) {
+async function downloadAndUploadMedia(instanceName, messageKey, mediaData, messageType) {
   try {
-    console.log(`[Media] Processing media for message: ${messageId}`);
+    console.log(`[Media] Processing ${messageType} for message: ${messageKey.id}`);
 
-    // Download media from WAHA
-    const mediaResponse = await wahaClient.get(mediaUrl, {
-      responseType: 'arraybuffer'
-    });
+    // Extract media URL from Evolution API message data
+    const mediaUrl = extractMediaUrl(mediaData, messageType);
 
-    const mediaBuffer = Buffer.from(mediaResponse.data);
-    const mimetype = messageData.mimetype || 'application/octet-stream';
-    const filename = messageData.filename || generateFilename(messageId, mimetype);
+    if (!mediaUrl) {
+      console.log(`[Media] No media URL found for message type: ${messageType}`);
+      return null;
+    }
 
-    // Generate storage path
-    const storagePath = `messages/${messageId}/${filename}`;
+    // Download media from Evolution API
+    let mediaBuffer;
+    let mimetype = mediaData.mimetype || 'application/octet-stream';
+    let originalFilename = mediaData.fileName || null;
+
+    // Evolution API provides base64 or URL
+    if (mediaUrl.startsWith('data:')) {
+      // Base64 data URL
+      const base64Data = mediaUrl.split(',')[1];
+      mediaBuffer = Buffer.from(base64Data, 'base64');
+    } else if (mediaUrl.startsWith('http')) {
+      // External URL - download
+      const response = await axios.get(mediaUrl, {
+        responseType: 'arraybuffer',
+        timeout: 30000
+      });
+      mediaBuffer = Buffer.from(response.data);
+    } else {
+      console.error(`[Media] Invalid media URL format: ${mediaUrl}`);
+      return null;
+    }
+
+    const filename = originalFilename || generateFilename(messageKey.id, mimetype, messageType);
+
+    // Generate storage path with date organization
+    const date = new Date();
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const storagePath = `messages/${year}/${month}/${messageKey.id}/${filename}`;
 
     // Upload to Supabase Storage
     const { data: uploadData, error: uploadError } = await supabaseAdmin
@@ -41,85 +69,132 @@ async function downloadAndUploadMedia(messageId, mediaUrl, messageData) {
       throw uploadError;
     }
 
-    // Get public URL (even though bucket is private, we need the path)
+    // Get public URL
     const { data: urlData } = supabaseAdmin
       .storage
       .from('whatsapp-media')
       .getPublicUrl(storagePath);
 
-    // Update message with media info
-    await supabaseAdmin
-      .from('messages')
-      .update({
-        media_url: urlData.publicUrl,
-        media_mimetype: mimetype,
-        media_size: mediaBuffer.length,
-        media_filename: filename
-      })
-      .eq('id', messageId);
+    console.log(`[Media] ✅ Successfully uploaded: ${storagePath} (${formatBytes(mediaBuffer.length)})`);
 
-    // Create media_files record
-    await supabaseAdmin
-      .from('media_files')
-      .insert({
-        message_id: messageId,
-        storage_bucket: 'whatsapp-media',
-        storage_path: storagePath,
-        filename,
-        mimetype,
-        size_bytes: mediaBuffer.length,
-        uploaded: true
-      });
-
-    console.log(`[Media] Successfully uploaded: ${storagePath}`);
+    // Return media info to be saved with message
+    return {
+      storage_path: storagePath,
+      public_url: urlData.publicUrl,
+      filename: filename,
+      mimetype: mimetype,
+      size_bytes: mediaBuffer.length,
+      media_type: messageType
+    };
   } catch (error) {
-    console.error('[Media] Upload error:', error);
+    console.error('[Media] ❌ Upload error:', error.message);
 
-    // Log failed upload
-    await supabaseAdmin
-      .from('media_files')
-      .insert({
-        message_id: messageId,
-        storage_bucket: 'whatsapp-media',
-        storage_path: `failed/${messageId}`,
-        filename: 'unknown',
-        mimetype: 'application/octet-stream',
-        size_bytes: 0,
-        uploaded: false,
-        upload_error: error.message
-      });
+    // Don't throw - just log and return null
+    // This prevents the entire message from failing if media fails
+    return null;
+  }
+}
 
-    throw error;
+/**
+ * Extract media URL from Evolution API message data
+ */
+function extractMediaUrl(mediaData, messageType) {
+  switch (messageType) {
+    case 'image':
+      return mediaData.url || null;
+    case 'video':
+      return mediaData.url || null;
+    case 'audio':
+      return mediaData.url || null;
+    case 'document':
+      return mediaData.url || null;
+    case 'sticker':
+      return mediaData.url || null;
+    default:
+      return null;
   }
 }
 
 /**
  * Generate filename from mimetype
  */
-function generateFilename(messageId, mimetype) {
+function generateFilename(messageId, mimetype, messageType) {
   const ext = getExtensionFromMimetype(mimetype);
-  return `${messageId}${ext}`;
+  const timestamp = Date.now();
+  return `${messageType}_${timestamp}${ext}`;
+}
+
+/**
+ * Format bytes to human readable size
+ */
+function formatBytes(bytes) {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
 }
 
 /**
  * Get file extension from MIME type
+ * Comprehensive support for all common document types
  */
 function getExtensionFromMimetype(mimetype) {
   const mimeMap = {
+    // Images
     'image/jpeg': '.jpg',
     'image/png': '.png',
     'image/gif': '.gif',
     'image/webp': '.webp',
+    'image/bmp': '.bmp',
+    'image/svg+xml': '.svg',
+
+    // Videos
     'video/mp4': '.mp4',
     'video/quicktime': '.mov',
+    'video/x-msvideo': '.avi',
+    'video/x-matroska': '.mkv',
+    'video/webm': '.webm',
+
+    // Audio
     'audio/mpeg': '.mp3',
     'audio/ogg': '.ogg',
     'audio/wav': '.wav',
+    'audio/mp4': '.m4a',
+    'audio/webm': '.weba',
+    'audio/opus': '.opus',
+
+    // Documents - PDF
     'application/pdf': '.pdf',
+
+    // Documents - Microsoft Word
     'application/msword': '.doc',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+
+    // Documents - Microsoft Excel
     'application/vnd.ms-excel': '.xls',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx'
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+
+    // Documents - Microsoft PowerPoint
+    'application/vnd.ms-powerpoint': '.ppt',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
+
+    // Documents - Text
+    'text/plain': '.txt',
+    'text/csv': '.csv',
+    'text/html': '.html',
+    'application/rtf': '.rtf',
+
+    // Archives
+    'application/zip': '.zip',
+    'application/x-rar-compressed': '.rar',
+    'application/x-7z-compressed': '.7z',
+    'application/x-tar': '.tar',
+    'application/gzip': '.gz',
+
+    // Other
+    'application/json': '.json',
+    'application/xml': '.xml'
   };
 
   return mimeMap[mimetype] || '.bin';
@@ -146,7 +221,18 @@ async function getMediaSignedUrl(storagePath, expiresIn = 3600) {
   }
 }
 
+/**
+ * Create thumbnail for images (optional - for future implementation)
+ */
+async function createThumbnail(mediaBuffer, mimetype) {
+  // TODO: Implement image thumbnail generation using sharp
+  // For now, return null
+  return null;
+}
+
 module.exports = {
   downloadAndUploadMedia,
-  getMediaSignedUrl
+  getMediaSignedUrl,
+  getExtensionFromMimetype,
+  formatBytes
 };

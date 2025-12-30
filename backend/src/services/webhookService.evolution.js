@@ -139,20 +139,48 @@ async function handleIncomingMessage(instance, messageData) {
 
     console.log(`[Webhook] Message saved: ${messageId}`);
 
-    // Handle media if present
+    // Handle media if present (Images, Videos, Audio, Documents, etc.)
     if (hasMedia && mediaData) {
       try {
-        // Evolution API provides direct media URL or base64
-        if (mediaData.url) {
-          await downloadAndUploadMedia(insertedMessage.id, mediaData.url, {
-            mimetype: mediaData.mimetype,
-            filename: mediaData.fileName || `media_${messageId}`,
-            size: mediaData.fileLength
-          });
+        console.log(`[Webhook] 📎 Processing ${messageType} media for message: ${messageId}`);
+
+        // Download and upload media to Supabase Storage
+        const mediaInfo = await downloadAndUploadMedia(
+          instance,
+          key,
+          mediaData,
+          messageType
+        );
+
+        if (mediaInfo) {
+          // Update message with media information
+          await supabaseAdmin
+            .from('messages')
+            .update({
+              media_url: mediaInfo.public_url,
+              media_mimetype: mediaInfo.mimetype,
+              media_size: mediaInfo.size_bytes,
+              media_filename: mediaInfo.filename
+            })
+            .eq('id', insertedMessage.id);
+
+          // Create message_media record
+          await supabaseAdmin
+            .from('message_media')
+            .insert({
+              message_id: insertedMessage.id,
+              media_type: mediaInfo.media_type,
+              file_url: mediaInfo.public_url,
+              file_name: mediaInfo.filename,
+              file_size: mediaInfo.size_bytes,
+              mime_type: mediaInfo.mimetype
+            });
+
+          console.log(`[Webhook] ✅ Media processed successfully: ${mediaInfo.filename}`);
         }
       } catch (mediaError) {
-        console.error('[Webhook] Media processing error:', mediaError);
-        // Continue even if media fails
+        console.error('[Webhook] ❌ Media processing error:', mediaError);
+        // Continue even if media fails - message is still saved
       }
     }
   } catch (error) {
