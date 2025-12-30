@@ -11,6 +11,7 @@ const userController = require('../controllers/userController');
 const sessionController = require('../controllers/sessionController.evolution');
 const messageController = require('../controllers/messageController.evolution');
 const webhookController = require('../controllers/webhookController.evolution');
+const syncController = require('../controllers/syncController');
 
 // Middlewares
 const { authenticate, isAdmin, isSuperAdmin } = require('../middlewares/auth');
@@ -61,6 +62,12 @@ router.get('/sessions/:sessionId/qr', sessionController.getSessionQRCode);
 router.post('/sessions/:sessionId/pairing-code', validateRequestPairingCode, sessionController.requestSessionPairingCode);
 router.post('/sessions/:sessionId/assign', isAdmin, validateAssignSession, sessionController.assignSession);
 router.delete('/sessions/:sessionId', isAdmin, sessionController.deleteSession);
+
+// ===== Message Synchronization =====
+
+router.post('/sessions/:sessionId/sync/initial', isAdmin, syncController.triggerInitialSync);
+router.post('/sessions/:sessionId/sync/gap-fill', isAdmin, syncController.triggerGapFill);
+router.get('/sessions/:sessionId/sync/status', syncController.getSyncStatus);
 
 // ===== Messaging =====
 

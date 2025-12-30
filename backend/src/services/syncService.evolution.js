@@ -212,6 +212,185 @@ async function processAndSaveMessage(sessionId, messageData, contactPhone) {
 }
 
 /**
+ * Initial message history sync - Syncs ALL chats and messages
+ * Use this when first connecting a session
+ *
+ * @param {string} sessionId - UUID of the session
+ * @param {Function} onProgress - Optional progress callback
+ * @returns {Object} - Sync results
+ */
+async function initialMessageSync(sessionId, onProgress = null) {
+  console.log(`[Sync] Starting INITIAL sync for session: ${sessionId}`);
+
+  try {
+    // Get session details
+    const { data: session } = await supabaseAdmin
+      .from('sessions')
+      .select('id, session_name, status')
+      .eq('id', sessionId)
+      .single();
+
+    if (!session || session.status !== 'CONNECTED') {
+      throw new Error('Session must be CONNECTED to sync');
+    }
+
+    // Update sync state
+    await supabaseAdmin.rpc('update_sync_state', {
+      p_session_id: sessionId,
+      p_sync_status: 'syncing',
+      p_sync_type: 'initial'
+    });
+
+    // Fetch ALL chats from Evolution API
+    console.log('[Sync] Fetching all chats from Evolution API...');
+    const chatsResponse = await getAllChats(session.session_name);
+    const allChats = chatsResponse || [];
+
+    console.log(`[Sync] Found ${allChats.length} chats to sync`);
+
+    let totalMessagesSynced = 0;
+    let totalChatsProcessed = 0;
+
+    // Process chats in batches (rate limiting)
+    for (let i = 0; i < allChats.length; i += RATE_LIMIT.CHATS_PER_BATCH) {
+      const chatBatch = allChats.slice(i, i + RATE_LIMIT.CHATS_PER_BATCH);
+
+      for (const chat of chatBatch) {
+        try {
+          const phoneNumber = chat.id.split('@')[0];
+          const isGroup = chat.id.endsWith('@g.us');
+
+          // Get or create contact
+          const { data: contactId } = await supabaseAdmin.rpc('ensure_contact_exists', {
+            p_session_id: sessionId,
+            p_phone_number: phoneNumber,
+            p_name: chat.name || chat.pushName || null,
+            p_is_group: isGroup
+          });
+
+          // Update contact metadata
+          await supabaseAdmin
+            .from('contacts')
+            .update({
+              whatsapp_metadata: {
+                unreadCount: chat.unreadCount || 0,
+                conversationTimestamp: chat.conversationTimestamp,
+                archived: chat.archived || false,
+                pinned: chat.pinned || false
+              }
+            })
+            .eq('id', contactId);
+
+          // Fetch messages for this chat
+          console.log(`[Sync] Fetching messages for: ${phoneNumber}`);
+
+          const messages = await getChatMessages(
+            session.session_name,
+            chat.id,
+            RATE_LIMIT.MAX_MESSAGES_PER_CHAT
+          );
+
+          if (messages && messages.length > 0) {
+            console.log(`[Sync] Found ${messages.length} messages for ${phoneNumber}`);
+
+            // Save messages in batches
+            for (let j = 0; j < messages.length; j += RATE_LIMIT.MESSAGES_PER_BATCH) {
+              const msgBatch = messages.slice(j, j + RATE_LIMIT.MESSAGES_PER_BATCH);
+
+              for (const msg of msgBatch) {
+                try {
+                  await processAndSaveMessage(sessionId, msg, phoneNumber);
+                  totalMessagesSynced++;
+                } catch (msgError) {
+                  console.error('[Sync] Error saving message:', msgError);
+                }
+              }
+
+              // Batch delay
+              if (j + RATE_LIMIT.MESSAGES_PER_BATCH < messages.length) {
+                await sleep(RATE_LIMIT.BATCH_DELAY_MS);
+              }
+            }
+          }
+
+          totalChatsProcessed++;
+
+          // Progress callback
+          if (onProgress) {
+            onProgress({
+              totalChats: allChats.length,
+              processedChats: totalChatsProcessed,
+              totalMessages: totalMessagesSynced,
+              currentChat: phoneNumber
+            });
+          }
+
+          // Rate limiting between chats
+          await sleep(500);
+
+        } catch (chatError) {
+          console.error(`[Sync] Error processing chat ${chat.id}:`, chatError);
+          // Continue with next chat
+        }
+      }
+
+      // Batch delay
+      if (i + RATE_LIMIT.CHATS_PER_BATCH < allChats.length) {
+        console.log(`[Sync] Batch completed. Waiting ${RATE_LIMIT.CHAT_DELAY_MS}ms...`);
+        await sleep(RATE_LIMIT.CHAT_DELAY_MS);
+      }
+    }
+
+    // Update sync state to completed
+    await supabaseAdmin.rpc('update_sync_state', {
+      p_session_id: sessionId,
+      p_sync_status: 'completed',
+      p_messages_count: totalMessagesSynced
+    });
+
+    // Update last_message_timestamp
+    const { data: lastMessage } = await supabaseAdmin
+      .from('messages')
+      .select('timestamp')
+      .eq('session_id', sessionId)
+      .order('timestamp', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (lastMessage) {
+      await supabaseAdmin
+        .from('sync_state')
+        .update({
+          last_message_timestamp: Math.floor(new Date(lastMessage.timestamp).getTime() / 1000)
+        })
+        .eq('session_id', sessionId);
+    }
+
+    console.log(`[Sync] Initial sync COMPLETED: ${totalMessagesSynced} messages from ${totalChatsProcessed} chats`);
+
+    return {
+      success: true,
+      totalChats: totalChatsProcessed,
+      totalMessages: totalMessagesSynced
+    };
+
+  } catch (error) {
+    console.error('[Sync] Initial sync error:', error);
+
+    // Update sync state to failed
+    await supabaseAdmin
+      .from('sync_state')
+      .update({
+        sync_status: 'failed',
+        error_message: error.message
+      })
+      .eq('session_id', sessionId);
+
+    throw error;
+  }
+}
+
+/**
  * Manual sync trigger (for admin use)
  */
 async function triggerManualSync(sessionId, userId) {
@@ -221,5 +400,6 @@ async function triggerManualSync(sessionId, userId) {
 
 module.exports = {
   triggerGapFillSync,
-  triggerManualSync
+  triggerManualSync,
+  initialMessageSync
 };
