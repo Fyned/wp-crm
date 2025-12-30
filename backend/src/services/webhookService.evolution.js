@@ -42,10 +42,12 @@ async function handleIncomingMessage(instance, messageData) {
     const contactPhone = remoteJid.split('@')[0];
 
     // Ensure contact exists
+    // IMPORTANT: Only update name from incoming messages (not from us)
+    // to prevent overwriting contact names with our line's name
     const { data: contactId } = await supabaseAdmin.rpc('ensure_contact_exists', {
       p_session_id: session.id,
       p_phone_number: contactPhone,
-      p_name: pushName || null,
+      p_name: fromMe ? null : (pushName || null), // Don't update name if message is from us
       p_is_group: remoteJid.endsWith('@g.us')
     });
 
