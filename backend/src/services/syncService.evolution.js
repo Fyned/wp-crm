@@ -318,18 +318,48 @@ async function initialMessageSync(sessionId, onProgress = null) {
             RATE_LIMIT.MAX_MESSAGES_PER_CHAT
           );
 
-          // Debug: Log the raw response
-          console.log(`[Sync] API Response type:`, typeof messagesResponse);
-          console.log(`[Sync] API Response:`, JSON.stringify(messagesResponse).substring(0, 500));
+          // Debug: Log the raw response structure
+          console.log(`[Sync] ===== API Response Debug for ${phoneNumber} =====`);
+          console.log(`[Sync] Response type:`, typeof messagesResponse);
+          console.log(`[Sync] Is Array:`, Array.isArray(messagesResponse));
+          console.log(`[Sync] Response keys:`, messagesResponse ? Object.keys(messagesResponse) : 'null');
+          console.log(`[Sync] Full response (first 1000 chars):`, JSON.stringify(messagesResponse).substring(0, 1000));
 
-          // Handle different response formats from Evolution API
+          // Handle ALL possible Evolution API response formats
           let messages = [];
+
           if (Array.isArray(messagesResponse)) {
+            // Direct array response: [{message1}, {message2}, ...]
             messages = messagesResponse;
-          } else if (messagesResponse && Array.isArray(messagesResponse.messages)) {
-            messages = messagesResponse.messages;
+            console.log(`[Sync] Format: Direct array`);
+          } else if (messagesResponse && messagesResponse.messages) {
+            // Wrapped in .messages: { messages: [...] }
+            if (Array.isArray(messagesResponse.messages)) {
+              messages = messagesResponse.messages;
+              console.log(`[Sync] Format: Wrapped in 'messages' array`);
+            } else if (Array.isArray(messagesResponse.messages.records)) {
+              // Double nested: { messages: { records: [...] } }
+              messages = messagesResponse.messages.records;
+              console.log(`[Sync] Format: messages.records`);
+            }
           } else if (messagesResponse && Array.isArray(messagesResponse.data)) {
+            // Wrapped in .data: { data: [...] }
             messages = messagesResponse.data;
+            console.log(`[Sync] Format: Wrapped in 'data' array`);
+          } else if (messagesResponse && messagesResponse.data && Array.isArray(messagesResponse.data.messages)) {
+            // Double nested: { data: { messages: [...] } }
+            messages = messagesResponse.data.messages;
+            console.log(`[Sync] Format: data.messages`);
+          } else if (messagesResponse) {
+            // Try to find any array property in the response
+            console.log(`[Sync] WARNING: Unknown response format, searching for array...`);
+            for (const key of Object.keys(messagesResponse)) {
+              if (Array.isArray(messagesResponse[key])) {
+                messages = messagesResponse[key];
+                console.log(`[Sync] Format: Found array in '${key}' property`);
+                break;
+              }
+            }
           }
 
           console.log(`[Sync] Extracted ${messages.length} messages for ${phoneNumber}`);
