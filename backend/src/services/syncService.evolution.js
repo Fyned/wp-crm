@@ -257,24 +257,18 @@ async function initialMessageSync(sessionId, onProgress = null) {
 
       for (const chat of chatBatch) {
         try {
-          // Skip invalid/system chats
-          if (!chat.id || chat.id === '0@s.whatsapp.net' || chat.id.startsWith('status@')) {
+          // Skip invalid/system chats ONLY
+          if (!chat.id || chat.id === '0@s.whatsapp.net' || chat.id.startsWith('status@') || chat.id === 'status@broadcast') {
             console.log(`[Sync] Skipping system chat: ${chat.id}`);
             continue;
           }
 
           const phoneNumber = chat.id.split('@')[0];
           const isGroup = chat.id.endsWith('@g.us');
-          const isLid = chat.id.endsWith('@lid'); // Business/Newsletter accounts
+          const isLid = chat.id.endsWith('@lid'); // Business/Newsletter accounts (INCLUDE these!)
 
-          // Skip @lid contacts (these are not real phone numbers)
-          if (isLid) {
-            console.log(`[Sync] Skipping @lid contact (Business ID): ${chat.id}`);
-            continue;
-          }
-
-          // Validate phone number (must be numeric and reasonable length)
-          if (!/^\d{7,15}$/.test(phoneNumber)) {
+          // Validate phone number format (but allow @lid contacts even if they look weird)
+          if (!isLid && !isGroup && !/^\d{7,15}$/.test(phoneNumber)) {
             console.log(`[Sync] Skipping invalid phone number: ${phoneNumber} from ${chat.id}`);
             continue;
           }
@@ -287,7 +281,7 @@ async function initialMessageSync(sessionId, onProgress = null) {
                            null; // Don't fallback to phone number, let DB handle it
 
           // Debug: Log chat object to see what fields are available
-          console.log(`[Sync] Processing valid chat:`, {
+          console.log(`[Sync] Processing chat:`, {
             id: chat.id,
             phoneNumber,
             extractedName: contactName,
