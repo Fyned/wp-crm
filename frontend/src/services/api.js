@@ -131,6 +131,22 @@ export const sessionAPI = {
     const response = await api.delete(`/sessions/${sessionId}`);
     return response.data;
   },
+
+  // Sync operations
+  syncInitial: async (sessionId) => {
+    const response = await api.post(`/sessions/${sessionId}/sync/initial`);
+    return response.data;
+  },
+
+  syncGapFill: async (sessionId) => {
+    const response = await api.post(`/sessions/${sessionId}/sync/gap-fill`);
+    return response.data;
+  },
+
+  getSyncStatus: async (sessionId) => {
+    const response = await api.get(`/sessions/${sessionId}/sync/status`);
+    return response.data;
+  },
 };
 
 // ===== Message API =====

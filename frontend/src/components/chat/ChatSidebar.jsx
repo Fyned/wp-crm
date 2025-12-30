@@ -5,7 +5,7 @@
 import { useState, useEffect } from 'react';
 import { useChatStore } from '../../stores/chatStore';
 import { useAuthStore } from '../../stores/authStore';
-import { PlusIcon, Cog6ToothIcon, ArrowRightOnRectangleIcon, TrashIcon, UserGroupIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, Cog6ToothIcon, ArrowRightOnRectangleIcon, TrashIcon, UserGroupIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import { useNavigate } from 'react-router-dom';
 import { sessionAPI } from '../../services/api';
 import toast from 'react-hot-toast';
@@ -68,6 +68,34 @@ export default function ChatSidebar({ onNewSession, isAdmin }) {
       toast.success('Session assigned successfully');
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to assign session');
+    }
+  };
+
+  const handleSyncMessages = async () => {
+    if (!currentSession) return;
+
+    const syncType = confirm('Initial sync (OK) or Gap-fill sync (Cancel)?');
+
+    try {
+      toast.loading('Starting message sync...', { id: 'sync' });
+
+      if (syncType) {
+        // Initial sync
+        await sessionAPI.syncInitial(currentSession.id);
+        toast.success('Initial sync started! Check PM2 logs for progress.', { id: 'sync' });
+      } else {
+        // Gap-fill sync
+        await sessionAPI.syncGapFill(currentSession.id);
+        toast.success('Gap-fill sync started!', { id: 'sync' });
+      }
+
+      // Refresh chats after sync starts
+      setTimeout(() => {
+        fetchChats(currentSession.id);
+      }, 3000);
+
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to start sync', { id: 'sync' });
     }
   };
 
@@ -135,23 +163,33 @@ export default function ChatSidebar({ onNewSession, isAdmin }) {
 
             {/* Session Management Buttons (Admin Only) */}
             {isAdmin && currentSession && (
-              <div className="flex space-x-2 mt-2">
+              <div className="flex flex-col space-y-2 mt-2">
                 <button
-                  onClick={handleAssignSession}
-                  className="flex-1 flex items-center justify-center space-x-2 px-3 py-2 bg-wa-bg border border-wa-border hover:bg-wa-hover rounded-lg text-sm text-gray-300 transition"
-                  title="Assign Session"
+                  onClick={handleSyncMessages}
+                  className="flex items-center justify-center space-x-2 px-3 py-2 bg-wa-bg border border-blue-500/50 hover:bg-blue-500/10 rounded-lg text-sm text-blue-400 transition"
+                  title="Sync Messages"
                 >
-                  <UserGroupIcon className="w-4 h-4" />
-                  <span>Assign</span>
+                  <ArrowPathIcon className="w-4 h-4" />
+                  <span>Sync Messages</span>
                 </button>
-                <button
-                  onClick={handleDeleteSession}
-                  className="flex-1 flex items-center justify-center space-x-2 px-3 py-2 bg-wa-bg border border-red-500/50 hover:bg-red-500/10 rounded-lg text-sm text-red-400 transition"
-                  title="Delete Session"
-                >
-                  <TrashIcon className="w-4 h-4" />
-                  <span>Delete</span>
-                </button>
+                <div className="flex space-x-2">
+                  <button
+                    onClick={handleAssignSession}
+                    className="flex-1 flex items-center justify-center space-x-2 px-3 py-2 bg-wa-bg border border-wa-border hover:bg-wa-hover rounded-lg text-sm text-gray-300 transition"
+                    title="Assign Session"
+                  >
+                    <UserGroupIcon className="w-4 h-4" />
+                    <span>Assign</span>
+                  </button>
+                  <button
+                    onClick={handleDeleteSession}
+                    className="flex-1 flex items-center justify-center space-x-2 px-3 py-2 bg-wa-bg border border-red-500/50 hover:bg-red-500/10 rounded-lg text-sm text-red-400 transition"
+                    title="Delete Session"
+                  >
+                    <TrashIcon className="w-4 h-4" />
+                    <span>Delete</span>
+                  </button>
+                </div>
               </div>
             )}
           </div>
