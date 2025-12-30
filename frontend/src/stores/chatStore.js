@@ -76,22 +76,18 @@ export const useChatStore = create((set, get) => ({
   sendMessage: async (sessionId, phoneNumber, message) => {
     set({ isSendingMessage: true });
     try {
-      await messageAPI.sendMessage(sessionId, phoneNumber, message);
+      const response = await messageAPI.sendMessage(sessionId, phoneNumber, message);
 
-      // Optimistically add message to UI
-      const newMessage = {
-        id: Date.now(),
-        body: message,
-        from_me: true,
-        timestamp: new Date().toISOString(),
-        ack: 'PENDING',
-      };
+      // Reload messages from database to get the saved message with proper ID
+      const currentChat = get().currentChat;
+      if (currentChat) {
+        await get().fetchMessages(sessionId, currentChat.contact_id);
+      }
 
-      set((state) => ({
-        messages: [...state.messages, newMessage],
-        isSendingMessage: false,
-      }));
+      // Also refresh chat list to update last message
+      await get().fetchChats(sessionId);
 
+      set({ isSendingMessage: false });
       return true;
     } catch (error) {
       console.error('Failed to send message:', error);

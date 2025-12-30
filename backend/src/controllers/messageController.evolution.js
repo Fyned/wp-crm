@@ -123,11 +123,50 @@ async function sendMessage(req, res) {
       );
     }
 
+    // Extract message details from Evolution response
+    const messageId = evolutionResponse.key?.id || evolutionResponse.message?.key?.id;
+    const timestamp = evolutionResponse.messageTimestamp || Date.now();
+
+    // Ensure contact exists in database
+    const cleanPhoneNumber = phone_number.replace('@s.whatsapp.net', '').replace('@c.us', '');
+    const { data: contactId } = await supabaseAdmin.rpc('ensure_contact_exists', {
+      p_session_id: sessionId,
+      p_phone_number: cleanPhoneNumber,
+      p_name: null,
+      p_is_group: formattedNumber.includes('@g.us')
+    });
+
+    // Save message to database
+    const messageRecord = {
+      session_id: sessionId,
+      contact_id: contactId,
+      waha_message_id: messageId,
+      message_type: media_url ? 'media' : 'text',
+      body: message || caption || '',
+      from_me: true,
+      ack: 'PENDING',
+      has_media: !!media_url,
+      timestamp: new Date(timestamp * 1000).toISOString(),
+      raw_payload: evolutionResponse
+    };
+
+    const { data: savedMessage, error: insertError } = await supabaseAdmin
+      .from('messages')
+      .insert(messageRecord)
+      .select()
+      .single();
+
+    if (insertError) {
+      console.error('[Message] Failed to save sent message:', insertError);
+      // Still return success since Evolution API sent the message
+    }
+
     res.json({
       success: true,
       data: {
-        message_id: evolutionResponse.key?.id || evolutionResponse.messageId,
-        timestamp: evolutionResponse.messageTimestamp || Date.now()
+        message_id: messageId,
+        timestamp: timestamp,
+        saved_message: savedMessage
       }
     });
   } catch (error) {

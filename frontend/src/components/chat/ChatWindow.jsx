@@ -163,8 +163,29 @@ function MessageAckIcon({ ack }) {
 
 function formatMessageTime(timestamp) {
   const date = new Date(timestamp);
-  return date.toLocaleTimeString('en-US', {
+  const now = new Date();
+  const isToday = date.toDateString() === now.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const isYesterday = date.toDateString() === yesterday.toDateString();
+
+  const timeStr = date.toLocaleTimeString('en-US', {
     hour: '2-digit',
     minute: '2-digit',
+    second: '2-digit',
+    hour12: false
   });
+
+  if (isToday) {
+    return timeStr;
+  } else if (isYesterday) {
+    return `Yesterday ${timeStr}`;
+  } else {
+    const dateStr = date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+    });
+    return `${dateStr} ${timeStr}`;
+  }
 }
