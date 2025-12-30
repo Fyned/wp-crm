@@ -90,7 +90,13 @@ async function deleteInstance(instanceName) {
 async function sendTextMessage(instanceName, phoneNumber, message) {
   const response = await evolutionClient.post(`/message/sendText/${instanceName}`, {
     number: phoneNumber,
-    text: message
+    options: {
+      delay: 1200,
+      presence: 'composing'
+    },
+    textMessage: {
+      text: message
+    }
   });
   return response.data;
 }
@@ -99,8 +105,14 @@ async function sendTextMessage(instanceName, phoneNumber, message) {
 async function sendMediaMessage(instanceName, phoneNumber, mediaUrl, caption = '') {
   const response = await evolutionClient.post(`/message/sendMedia/${instanceName}`, {
     number: phoneNumber,
-    mediaUrl,
-    caption
+    options: {
+      delay: 1200,
+      presence: 'composing'
+    },
+    mediaMessage: {
+      mediaUrl,
+      caption
+    }
   });
   return response.data;
 }

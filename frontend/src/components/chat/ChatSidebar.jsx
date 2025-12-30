@@ -5,8 +5,10 @@
 import { useState, useEffect } from 'react';
 import { useChatStore } from '../../stores/chatStore';
 import { useAuthStore } from '../../stores/authStore';
-import { PlusIcon, Cog6ToothIcon, ArrowRightOnRectangleIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, Cog6ToothIcon, ArrowRightOnRectangleIcon, TrashIcon, UserGroupIcon } from '@heroicons/react/24/outline';
 import { useNavigate } from 'react-router-dom';
+import { sessionAPI } from '../../services/api';
+import toast from 'react-hot-toast';
 
 export default function ChatSidebar({ onNewSession, isAdmin }) {
   const navigate = useNavigate();
@@ -28,6 +30,45 @@ export default function ChatSidebar({ onNewSession, isAdmin }) {
   const handleLogout = () => {
     logout();
     navigate('/login');
+  };
+
+  const handleDeleteSession = async () => {
+    if (!currentSession) return;
+
+    if (!confirm(`Are you sure you want to delete session "${currentSession.session_name}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      await sessionAPI.deleteSession(currentSession.id);
+      toast.success('Session deleted successfully');
+      // Refresh sessions list
+      window.location.reload();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to delete session');
+    }
+  };
+
+  const handleAssignSession = async () => {
+    if (!currentSession) return;
+
+    const userId = prompt('Enter User ID to assign this session to (or leave empty for team assignment):');
+    const teamId = userId ? null : prompt('Enter Team ID:');
+
+    if (!userId && !teamId) {
+      toast.error('Please provide either User ID or Team ID');
+      return;
+    }
+
+    try {
+      await sessionAPI.assignSession(currentSession.id, {
+        assigned_to_user_id: userId || null,
+        assigned_to_team_id: teamId || null
+      });
+      toast.success('Session assigned successfully');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to assign session');
+    }
   };
 
   return (
@@ -91,6 +132,28 @@ export default function ChatSidebar({ onNewSession, isAdmin }) {
                 </option>
               ))}
             </select>
+
+            {/* Session Management Buttons (Admin Only) */}
+            {isAdmin && currentSession && (
+              <div className="flex space-x-2 mt-2">
+                <button
+                  onClick={handleAssignSession}
+                  className="flex-1 flex items-center justify-center space-x-2 px-3 py-2 bg-wa-bg border border-wa-border hover:bg-wa-hover rounded-lg text-sm text-gray-300 transition"
+                  title="Assign Session"
+                >
+                  <UserGroupIcon className="w-4 h-4" />
+                  <span>Assign</span>
+                </button>
+                <button
+                  onClick={handleDeleteSession}
+                  className="flex-1 flex items-center justify-center space-x-2 px-3 py-2 bg-wa-bg border border-red-500/50 hover:bg-red-500/10 rounded-lg text-sm text-red-400 transition"
+                  title="Delete Session"
+                >
+                  <TrashIcon className="w-4 h-4" />
+                  <span>Delete</span>
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
