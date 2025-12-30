@@ -17,6 +17,9 @@ const routes = require('./routes');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Trust proxy (required for rate limiting behind Nginx/reverse proxy)
+app.set('trust proxy', 1);
+
 // ===== Security Middleware =====
 
 // Helmet for security headers
