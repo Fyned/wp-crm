@@ -340,6 +340,23 @@ async function initialMessageSync(sessionId, onProgress = null) {
 
           console.log(`[Sync] Extracted ${messages.length} messages for ${phoneNumber}`);
 
+          // If contact has no name, try to extract from messages
+          if (!contactName && messages && messages.length > 0) {
+            for (const msg of messages) {
+              if (msg.pushName && msg.pushName !== phoneNumber) {
+                contactName = msg.pushName;
+                console.log(`[Sync] Extracted name from message: ${contactName}`);
+
+                // Update contact with extracted name
+                await supabaseAdmin
+                  .from('contacts')
+                  .update({ name: contactName })
+                  .eq('id', contactId);
+                break;
+              }
+            }
+          }
+
           if (messages && messages.length > 0) {
             console.log(`[Sync] Found ${messages.length} messages for ${phoneNumber}`);
 
