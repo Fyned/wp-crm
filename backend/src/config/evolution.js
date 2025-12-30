@@ -67,7 +67,7 @@ async function getInstanceStatus(instanceName) {
 
 // Get QR Code
 async function getQRCode(instanceName) {
-  const response = await evolutionClient.get(`/instance/qrcode/${instanceName}`);
+  const response = await evolutionClient.get(`/instance/connect/${instanceName}`);
   return response.data;
 }
 

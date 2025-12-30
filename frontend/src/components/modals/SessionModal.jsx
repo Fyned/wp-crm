@@ -105,7 +105,7 @@ export default function SessionModal({ onClose }) {
                   placeholder="e.g., sales-team, support-line"
                   className="w-full px-4 py-3 bg-wa-bg border border-wa-border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
                   required
-                  pattern="[a-zA-Z0-9_-]+"
+                  pattern="[a-zA-Z0-9_\-]+"
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   Only letters, numbers, underscores, and hyphens allowed
