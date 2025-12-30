@@ -41,9 +41,17 @@ async function createSession(req, res) {
       const evolutionResponse = await createInstance(session_name);
 
       // Set webhook for this instance
+      // Use WEBHOOK_BASE_URL for internal Docker->Backend communication
+      // or API_BASE_URL for external access
+      const webhookUrl = process.env.WEBHOOK_BASE_URL
+        ? `${process.env.WEBHOOK_BASE_URL}/api/webhooks/evolution`
+        : `${process.env.API_BASE_URL}/api/webhooks/evolution`;
+
+      console.log('[Session] Setting webhook URL:', webhookUrl);
+
       await setWebhook(
         session_name,
-        `${process.env.API_BASE_URL}/api/webhooks/evolution`,
+        webhookUrl,
         [
           'QRCODE_UPDATED',
           'CONNECTION_UPDATE',
