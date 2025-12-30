@@ -343,7 +343,10 @@ async function handleContactsUpdate(instance, contactsData) {
     // Update contacts in database
     for (const contact of contacts) {
       const phoneNumber = contact.id.split('@')[0];
-      const name = contact.name || contact.notify || contact.verifiedName;
+
+      // CRITICAL: Don't use contact.notify - it changes based on last message sender!
+      // Only use reliable, stable contact information
+      const name = contact.name || contact.verifiedName || null;
 
       await supabaseAdmin.rpc('ensure_contact_exists', {
         p_session_id: session.id,
