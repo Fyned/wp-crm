@@ -15,7 +15,15 @@ export default function ChatPage() {
   const [showSessionModal, setShowSessionModal] = useState(false);
 
   useEffect(() => {
+    // Initial fetch
     fetchSessions();
+
+    // Auto-refresh sessions every 10 seconds to detect connection status changes
+    const interval = setInterval(() => {
+      fetchSessions();
+    }, 10000);
+
+    return () => clearInterval(interval);
   }, [fetchSessions]);
 
   const isAdmin = ['admin', 'super_admin'].includes(user?.role);
