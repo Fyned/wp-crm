@@ -235,7 +235,7 @@ function ChatListItem({ chat }) {
       <div className="ml-4 flex-1 min-w-0">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-white truncate">
-            {chat.name || chat.phone_number}
+            {chat.name || formatPhoneNumber(chat.phone_number)}
           </h3>
           {chat.last_message_timestamp && (
             <span className="text-xs text-gray-400 ml-2">
@@ -258,6 +258,36 @@ function ChatListItem({ chat }) {
       </div>
     </div>
   );
+}
+
+function formatPhoneNumber(phoneNumber) {
+  if (!phoneNumber) return '';
+
+  // Remove all non-digit characters
+  const cleaned = phoneNumber.toString().replace(/\D/g, '');
+
+  // Handle Turkish phone numbers (+90)
+  if (cleaned.startsWith('90') && cleaned.length >= 12) {
+    const countryCode = cleaned.slice(0, 2);
+    const areaCode = cleaned.slice(2, 5);
+    const part1 = cleaned.slice(5, 8);
+    const part2 = cleaned.slice(8, 10);
+    const part3 = cleaned.slice(10, 12);
+    return `+${countryCode} ${areaCode} ${part1} ${part2} ${part3}`;
+  }
+
+  // Handle international numbers
+  if (cleaned.length > 10) {
+    const countryCode = cleaned.slice(0, cleaned.length - 10);
+    const rest = cleaned.slice(cleaned.length - 10);
+    const part1 = rest.slice(0, 3);
+    const part2 = rest.slice(3, 6);
+    const part3 = rest.slice(6, 10);
+    return `+${countryCode} ${part1} ${part2} ${part3}`;
+  }
+
+  // Fallback to original
+  return phoneNumber;
 }
 
 function formatTime(timestamp) {
