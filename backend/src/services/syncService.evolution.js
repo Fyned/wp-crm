@@ -1,10 +1,26 @@
 /**
- * Smart Sync Service for Evolution API
- * Handles automatic gap-filling and message synchronization
+ * Professional Message Synchronization Service for Evolution API
+ * Handles initial sync, gap-fill sync with rate limiting and spam prevention
  */
 
 const { supabaseAdmin } = require('../config/database');
 const { getChatMessages, getAllChats } = require('../config/evolution');
+
+// Rate limiting configuration (prevent WhatsApp spam detection)
+const RATE_LIMIT = {
+  MESSAGES_PER_BATCH: 50,
+  BATCH_DELAY_MS: 2000, // 2 seconds between batches
+  CHATS_PER_BATCH: 10,
+  CHAT_DELAY_MS: 1000, // 1 second between chat batches
+  MAX_MESSAGES_PER_CHAT: 1000, // Safety limit
+};
+
+/**
+ * Sleep utility for rate limiting
+ */
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 /**
  * Trigger gap-fill sync for a session
