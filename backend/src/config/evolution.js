@@ -130,10 +130,34 @@ async function getChatMessages(instanceName, phoneNumber, limit = 50) {
   return response.data;
 }
 
-// Get all chats
+// Get all chats (with pagination support to fetch ALL chats)
 async function getAllChats(instanceName) {
-  const response = await evolutionClient.get(`/chat/findChats/${instanceName}`);
-  return response.data;
+  const allChats = [];
+  let page = 1;
+  const limit = 100; // Fetch 100 chats per page
+
+  while (true) {
+    const response = await evolutionClient.get(`/chat/findChats/${instanceName}`, {
+      params: { page, limit }
+    });
+
+    const chats = response.data || [];
+
+    if (chats.length === 0) {
+      break; // No more chats
+    }
+
+    allChats.push(...chats);
+
+    if (chats.length < limit) {
+      break; // Last page
+    }
+
+    page++;
+  }
+
+  console.log(`[Evolution API] Fetched total ${allChats.length} chats from all pages`);
+  return allChats;
 }
 
 // Mark message as read

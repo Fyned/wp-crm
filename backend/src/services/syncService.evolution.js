@@ -260,11 +260,28 @@ async function initialMessageSync(sessionId, onProgress = null) {
           const phoneNumber = chat.id.split('@')[0];
           const isGroup = chat.id.endsWith('@g.us');
 
+          // Extract contact name with multiple fallbacks
+          let contactName = chat.name ||
+                           chat.pushName ||
+                           chat.notify ||
+                           chat.verifiedName ||
+                           phoneNumber; // Fallback to phone number
+
+          // Debug: Log chat object to see what fields are available
+          console.log(`[Sync] Processing chat:`, {
+            id: chat.id,
+            name: chat.name,
+            pushName: chat.pushName,
+            notify: chat.notify,
+            phoneNumber,
+            extractedName: contactName
+          });
+
           // Get or create contact
           const { data: contactId } = await supabaseAdmin.rpc('ensure_contact_exists', {
             p_session_id: sessionId,
             p_phone_number: phoneNumber,
-            p_name: chat.name || chat.pushName || null,
+            p_name: contactName,
             p_is_group: isGroup
           });
 
