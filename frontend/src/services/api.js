@@ -111,10 +111,8 @@ export const sessionAPI = {
   },
 
   getQRCode: async (sessionId) => {
-    const response = await api.get(`/sessions/${sessionId}/qr`, {
-      responseType: 'blob',
-    });
-    return URL.createObjectURL(response.data);
+    const response = await api.get(`/sessions/${sessionId}/qr`);
+    return response.data.data.qrcode;
   },
 
   requestPairingCode: async (sessionId, phoneNumber) => {
