@@ -119,15 +119,13 @@ async function sendMediaMessage(instanceName, phoneNumber, mediaUrl, caption = '
 
 // Get chat messages (from Evolution API's internal storage)
 async function getChatMessages(instanceName, phoneNumber, limit = 50) {
-  const response = await evolutionClient.get(`/chat/findMessages/${instanceName}`, {
-    params: {
-      where: {
-        key: {
-          remoteJid: phoneNumber
-        }
-      },
-      limit
-    }
+  const response = await evolutionClient.post(`/chat/findMessages/${instanceName}`, {
+    where: {
+      key: {
+        remoteJid: phoneNumber
+      }
+    },
+    limit
   });
   return response.data;
 }
