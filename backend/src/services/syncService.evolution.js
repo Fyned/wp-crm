@@ -284,11 +284,27 @@ async function initialMessageSync(sessionId, onProgress = null) {
           // Fetch messages for this chat
           console.log(`[Sync] Fetching messages for: ${phoneNumber}`);
 
-          const messages = await getChatMessages(
+          const messagesResponse = await getChatMessages(
             session.session_name,
             chat.id,
             RATE_LIMIT.MAX_MESSAGES_PER_CHAT
           );
+
+          // Debug: Log the raw response
+          console.log(`[Sync] API Response type:`, typeof messagesResponse);
+          console.log(`[Sync] API Response:`, JSON.stringify(messagesResponse).substring(0, 500));
+
+          // Handle different response formats from Evolution API
+          let messages = [];
+          if (Array.isArray(messagesResponse)) {
+            messages = messagesResponse;
+          } else if (messagesResponse && Array.isArray(messagesResponse.messages)) {
+            messages = messagesResponse.messages;
+          } else if (messagesResponse && Array.isArray(messagesResponse.data)) {
+            messages = messagesResponse.data;
+          }
+
+          console.log(`[Sync] Extracted ${messages.length} messages for ${phoneNumber}`);
 
           if (messages && messages.length > 0) {
             console.log(`[Sync] Found ${messages.length} messages for ${phoneNumber}`);
