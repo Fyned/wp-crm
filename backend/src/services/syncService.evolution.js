@@ -274,11 +274,12 @@ async function initialMessageSync(sessionId, onProgress = null) {
           }
 
           // Extract contact name with multiple fallbacks
+          // IMPORTANT: Don't use pushName - it changes based on last message sender!
+          // Only use reliable sources: chat.name (WhatsApp saved name) or verifiedName
           let contactName = chat.name ||
-                           chat.pushName ||
-                           chat.notify ||
                            chat.verifiedName ||
-                           null; // Don't fallback to phone number, let DB handle it
+                           chat.notify ||
+                           null; // Don't fallback to phone number or pushName, let DB handle it
 
           // Debug: Log chat object to see what fields are available
           console.log(`[Sync] Processing chat:`, {
