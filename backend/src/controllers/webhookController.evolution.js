@@ -23,8 +23,11 @@ async function handleEvolutionWebhook(req, res) {
 
     console.log(`[Webhook] Received event: ${event} for instance: ${instance}`);
 
+    // Normalize event name to uppercase for consistency
+    const normalizedEvent = event?.toUpperCase().replace(/\./g, '_');
+
     // Route to appropriate handler based on event type
-    switch (event) {
+    switch (normalizedEvent) {
       case 'MESSAGES_UPSERT':
       case 'MESSAGES_SET':
         await handleIncomingMessage(instance, payload);
@@ -60,7 +63,7 @@ async function handleEvolutionWebhook(req, res) {
         break;
 
       default:
-        console.log(`[Webhook] Unhandled event type: ${event}`);
+        console.log(`[Webhook] Unhandled event type: ${event} (normalized: ${normalizedEvent})`);
     }
 
     // Always return 200 to acknowledge receipt
