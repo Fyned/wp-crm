@@ -12,9 +12,11 @@ https://supabase.com/dashboard/project/jillpsifuqdioispmlaq
 - **New Query** butonuna bas
 
 ### 3. Migration SQL'i Kopyala
-- Dosya: `/home/user/wp-crm/backend/database/migrations/003_crm_features.sql`
+- Dosya: `/home/user/wp-crm/backend/database/migrations/003_crm_features_fixed.sql`
 - Tüm içeriği kopyala (aşağıda)
 - SQL Editor'a yapıştır
+
+**ÖNEMLİ:** `003_crm_features_FIXED.sql` dosyasını kullan! Bu versiyon mevcut tabloları düzgün bir şekilde handle eder.
 
 ### 4. RUN Butonuna Bas
 - ✅ Başarılı mesajı görmeli: "Success. No rows returned"
