@@ -73,7 +73,11 @@ CREATE INDEX idx_chat_assignments_active ON chat_assignments(is_active);
 -- =====================================================
 -- 4. MESSAGE MEDIA (Images, Videos, Documents)
 -- =====================================================
-CREATE TABLE IF NOT EXISTS message_media (
+
+-- Drop existing table if it exists (clean slate)
+DROP TABLE IF EXISTS message_media CASCADE;
+
+CREATE TABLE message_media (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
   media_type VARCHAR(50) NOT NULL,
@@ -91,9 +95,9 @@ CREATE TABLE IF NOT EXISTS message_media (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_message_media_message_id ON message_media(message_id);
-CREATE INDEX IF NOT EXISTS idx_message_media_type ON message_media(media_type);
-CREATE INDEX IF NOT EXISTS idx_message_media_status ON message_media(download_status);
+CREATE INDEX idx_message_media_message_id ON message_media(message_id);
+CREATE INDEX idx_message_media_type ON message_media(media_type);
+CREATE INDEX idx_message_media_status ON message_media(download_status);
 
 -- =====================================================
 -- 5. SYNC STATE (Track message synchronization)
