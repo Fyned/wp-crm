@@ -198,6 +198,19 @@ async function setWebhook(instanceName, webhookUrl, events) {
   return response.data;
 }
 
+// Download media (decrypts WhatsApp encrypted media)
+async function downloadMedia(instanceName, messageId, convertToMp4 = false) {
+  const response = await evolutionClient.post(`/message/downloadMedia/${instanceName}`, {
+    key: {
+      id: messageId
+    },
+    convertToMp4
+  }, {
+    responseType: 'arraybuffer' // Get binary data
+  });
+  return response.data;
+}
+
 module.exports = {
   evolutionClient,
 
@@ -219,6 +232,7 @@ module.exports = {
   getChatMessages,
   getAllChats,
   markMessageRead,
+  downloadMedia,
 
   // Webhook
   setWebhook

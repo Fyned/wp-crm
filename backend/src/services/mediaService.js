@@ -17,35 +17,23 @@ async function downloadAndUploadMedia(instanceName, messageKey, mediaData, messa
   try {
     console.log(`[Media] Processing ${messageType} for message: ${messageKey.id}`);
 
-    // Extract media URL from Evolution API message data
-    const mediaUrl = extractMediaUrl(mediaData, messageType);
-
-    if (!mediaUrl) {
-      console.log(`[Media] No media URL found for message type: ${messageType}`);
-      return null;
-    }
-
-    // Download media from Evolution API
     let mediaBuffer;
     let mimetype = mediaData.mimetype || 'application/octet-stream';
     let originalFilename = mediaData.fileName || null;
 
-    // Evolution API provides base64 or URL
-    if (mediaUrl.startsWith('data:')) {
-      // Base64 data URL
-      const base64Data = mediaUrl.split(',')[1];
-      mediaBuffer = Buffer.from(base64Data, 'base64');
-    } else if (mediaUrl.startsWith('http')) {
-      // External URL - download
-      const response = await axios.get(mediaUrl, {
-        responseType: 'arraybuffer',
-        timeout: 30000
-      });
-      mediaBuffer = Buffer.from(response.data);
-    } else {
-      console.error(`[Media] Invalid media URL format: ${mediaUrl}`);
+    // WhatsApp media URLs are ENCRYPTED - must download through Evolution API
+    // Evolution API will decrypt and provide the actual media file
+    console.log(`[Media] Downloading encrypted media via Evolution API...`);
+
+    const { downloadMedia } = require('../config/evolution');
+    const decryptedMediaBuffer = await downloadMedia(instanceName, messageKey.id, false);
+
+    if (!decryptedMediaBuffer || decryptedMediaBuffer.length === 0) {
+      console.error(`[Media] Failed to download media from Evolution API`);
       return null;
     }
+
+    mediaBuffer = Buffer.from(decryptedMediaBuffer);
 
     const filename = originalFilename || generateFilename(messageKey.id, mimetype, messageType);
 
