@@ -45,8 +45,11 @@ async function triggerInitialSync(req, res) {
       });
     }
 
+    // Get messages limit from query (default: 10)
+    const messagesLimit = parseInt(req.query.limit) || 10;
+
     // Start sync in background (don't wait)
-    initialMessageSync(sessionId, (progress) => {
+    initialMessageSync(sessionId, messagesLimit, (progress) => {
       console.log(`[Sync Progress] ${progress.processedChats}/${progress.totalChats} chats, ${progress.totalMessages} messages`);
     }).catch(err => {
       console.error('[Sync Controller] Background sync error:', err);

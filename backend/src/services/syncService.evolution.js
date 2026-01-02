@@ -5,6 +5,7 @@
 
 const { supabaseAdmin } = require('../config/database');
 const { getChatMessages, getAllChats } = require('../config/evolution');
+const { downloadAndUploadMedia } = require('./mediaService');
 
 // Rate limiting configuration (prevent WhatsApp spam detection)
 const RATE_LIMIT = {
@@ -24,16 +25,17 @@ function sleep(ms) {
 
 /**
  * Trigger gap-fill sync for a session
- * Automatically syncs messages since last_message_timestamp
+ * Automatically syncs ALL messages (including media) since last sync
+ * Used when reconnecting after disconnection
  */
-async function triggerGapFillSync(sessionId) {
+async function triggerGapFillSync(sessionId, onProgress = null) {
   try {
-    console.log(`[Sync] Starting gap-fill sync for session: ${sessionId}`);
+    console.log(`[Sync] 🔄 Starting GAP-FILL sync for session: ${sessionId}`);
 
     // Get session details
     const { data: session, error: sessionError } = await supabaseAdmin
       .from('sessions')
-      .select('id, session_name, last_message_timestamp, status')
+      .select('id, session_name, status')
       .eq('id', sessionId)
       .single();
 
@@ -42,96 +44,309 @@ async function triggerGapFillSync(sessionId) {
     }
 
     if (session.status !== 'CONNECTED') {
-      console.log(`[Sync] Session not connected, skipping sync`);
-      return;
+      console.log(`[Sync] ⚠️ Session not connected, skipping sync`);
+      return { success: false, reason: 'Session not connected' };
     }
 
-    // Create sync log entry
-    const { data: syncLog, error: logError } = await supabaseAdmin
-      .from('sync_logs')
-      .insert({
-        session_id: sessionId,
-        sync_type: 'gap_fill',
-        status: 'started',
-        from_timestamp: session.last_message_timestamp,
-        to_timestamp: new Date().toISOString()
-      })
-      .select()
+    // Get last sync state
+    const { data: syncState } = await supabaseAdmin
+      .from('sync_state')
+      .select('last_message_timestamp, last_synced_at')
+      .eq('session_id', sessionId)
       .single();
 
-    if (logError) {
-      throw logError;
-    }
+    const lastSyncTimestamp = syncState?.last_message_timestamp || 0;
+    console.log(`[Sync] Last synced timestamp: ${lastSyncTimestamp} (${new Date(lastSyncTimestamp * 1000).toISOString()})`);
 
-    try {
-      // Get all chats from Evolution API
-      const chats = await getAllChats(session.session_name);
+    // Update sync state to 'syncing'
+    await supabaseAdmin.rpc('update_sync_state', {
+      p_session_id: sessionId,
+      p_sync_status: 'syncing',
+      p_sync_type: 'gap_fill'
+    });
 
-      console.log(`[Sync] Found ${chats.length} chats to sync`);
+    // Get all chats from Evolution API
+    const chatsResponse = await getAllChats(session.session_name);
+    const allChats = chatsResponse || [];
 
-      let totalSynced = 0;
+    console.log(`[Sync] Found ${allChats.length} chats to check for new messages`);
 
-      // Sync messages for each chat
-      for (const chat of chats) {
+    let totalSynced = 0;
+    let totalChatsWithNewMessages = 0;
+
+    // Process chats in batches (rate limiting)
+    for (let i = 0; i < allChats.length; i += RATE_LIMIT.CHATS_PER_BATCH) {
+      const chatBatch = allChats.slice(i, i + RATE_LIMIT.CHATS_PER_BATCH);
+
+      for (const chat of chatBatch) {
         try {
+          // Skip system chats
+          if (!chat.id || chat.id === '0@s.whatsapp.net' || chat.id.startsWith('status@')) {
+            continue;
+          }
+
           const phoneNumber = chat.id.split('@')[0];
+          const isGroup = chat.id.endsWith('@g.us');
 
-          // Get messages from Evolution API
-          const messages = await getChatMessages(session.session_name, chat.id, 100);
+          // Get messages from Evolution API (fetch more to ensure we get everything)
+          const messagesResponse = await getChatMessages(
+            session.session_name,
+            chat.id,
+            500 // Fetch up to 500 messages to catch everything missed
+          );
 
-          // Filter messages newer than last_message_timestamp
-          const newMessages = session.last_message_timestamp
-            ? messages.filter(m => new Date(m.messageTimestamp * 1000) > new Date(session.last_message_timestamp))
-            : messages;
+          // Parse messages (handle all response formats)
+          let messages = [];
+          if (Array.isArray(messagesResponse)) {
+            messages = messagesResponse;
+          } else if (messagesResponse?.messages) {
+            messages = Array.isArray(messagesResponse.messages)
+              ? messagesResponse.messages
+              : messagesResponse.messages.records || [];
+          } else if (messagesResponse?.data) {
+            messages = Array.isArray(messagesResponse.data)
+              ? messagesResponse.data
+              : messagesResponse.data.messages || [];
+          }
 
-          console.log(`[Sync] Chat ${phoneNumber}: ${newMessages.length} new messages`);
+          // Filter ONLY new messages (after last sync)
+          const newMessages = lastSyncTimestamp > 0
+            ? messages.filter(m => {
+                const msgTimestamp = m.messageTimestamp || Math.floor(new Date(m.timestamp).getTime() / 1000);
+                return msgTimestamp > lastSyncTimestamp;
+              })
+            : messages; // If no last sync, take all
 
-          // Process each message
-          for (const msg of newMessages) {
-            try {
-              await processAndSaveMessage(sessionId, msg, phoneNumber);
-              totalSynced++;
-            } catch (msgError) {
-              console.error(`[Sync] Error processing message:`, msgError);
+          if (newMessages.length > 0) {
+            console.log(`[Sync] 📥 Chat ${phoneNumber}: ${newMessages.length} new messages`);
+            totalChatsWithNewMessages++;
+
+            // Get or create contact
+            const contactName = chat.name || chat.verifiedName || chat.notify || null;
+            const { data: contactId } = await supabaseAdmin.rpc('ensure_contact_exists', {
+              p_session_id: sessionId,
+              p_phone_number: phoneNumber,
+              p_name: contactName,
+              p_is_group: isGroup
+            });
+
+            // Process each new message (including media download)
+            for (const msg of newMessages) {
+              try {
+                await processAndSaveMessageWithMedia(sessionId, contactId, msg, phoneNumber, session.session_name);
+                totalSynced++;
+              } catch (msgError) {
+                console.error(`[Sync] ❌ Error processing message:`, msgError);
+              }
             }
           }
+
+          // Progress callback
+          if (onProgress) {
+            onProgress({
+              totalChats: allChats.length,
+              processedChats: i + chatBatch.indexOf(chat) + 1,
+              totalMessages: totalSynced,
+              currentChat: phoneNumber,
+              chatsWithNewMessages: totalChatsWithNewMessages
+            });
+          }
+
+          // Rate limiting between chats
+          await sleep(500);
+
         } catch (chatError) {
-          console.error(`[Sync] Error syncing chat ${chat.id}:`, chatError);
+          console.error(`[Sync] ❌ Error syncing chat ${chat.id}:`, chatError);
         }
       }
 
-      // Update sync log as completed
-      await supabaseAdmin
-        .from('sync_logs')
-        .update({
-          status: 'completed',
-          messages_synced: totalSynced,
-          completed_at: new Date().toISOString()
-        })
-        .eq('id', syncLog.id);
-
-      console.log(`[Sync] Gap-fill completed: ${totalSynced} messages synced`);
-    } catch (syncError) {
-      // Update sync log as failed
-      await supabaseAdmin
-        .from('sync_logs')
-        .update({
-          status: 'failed',
-          error_message: syncError.message,
-          completed_at: new Date().toISOString()
-        })
-        .eq('id', syncLog.id);
-
-      throw syncError;
+      // Batch delay
+      if (i + RATE_LIMIT.CHATS_PER_BATCH < allChats.length) {
+        console.log(`[Sync] ⏸️ Batch completed. Waiting ${RATE_LIMIT.CHAT_DELAY_MS}ms...`);
+        await sleep(RATE_LIMIT.CHAT_DELAY_MS);
+      }
     }
+
+    // Update sync state to completed
+    await supabaseAdmin.rpc('update_sync_state', {
+      p_session_id: sessionId,
+      p_sync_status: 'completed',
+      p_messages_count: totalSynced
+    });
+
+    // Update last_message_timestamp
+    const { data: lastMessage } = await supabaseAdmin
+      .from('messages')
+      .select('timestamp')
+      .eq('session_id', sessionId)
+      .order('timestamp', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (lastMessage) {
+      await supabaseAdmin
+        .from('sync_state')
+        .update({
+          last_message_timestamp: Math.floor(new Date(lastMessage.timestamp).getTime() / 1000)
+        })
+        .eq('session_id', sessionId);
+    }
+
+    console.log(`[Sync] ✅ Gap-fill COMPLETED: ${totalSynced} messages from ${totalChatsWithNewMessages} chats`);
+
+    return {
+      success: true,
+      totalMessages: totalSynced,
+      totalChats: totalChatsWithNewMessages
+    };
+
   } catch (error) {
-    console.error('[Sync] Gap-fill sync error:', error);
+    console.error('[Sync] ❌ Gap-fill sync error:', error);
+
+    // Update sync state to failed
+    await supabaseAdmin
+      .from('sync_state')
+      .update({
+        sync_status: 'failed',
+        error_message: error.message
+      })
+      .eq('session_id', sessionId);
+
     throw error;
   }
 }
 
 /**
- * Process and save a single message
+ * Process and save message WITH media download
+ * Used in gap-fill sync to ensure ALL media is downloaded
+ */
+async function processAndSaveMessageWithMedia(sessionId, contactId, messageData, contactPhone, instanceName) {
+  const {
+    key,
+    message: msgContent,
+    messageTimestamp,
+    pushName
+  } = messageData;
+
+  const messageId = key.id;
+  const fromMe = key.fromMe;
+
+  // Check if already exists
+  const { data: existing } = await supabaseAdmin
+    .from('messages')
+    .select('id')
+    .eq('session_id', sessionId)
+    .eq('waha_message_id', messageId)
+    .single();
+
+  if (existing) {
+    return; // Skip duplicates
+  }
+
+  // Extract message content and detect media
+  let messageType = 'text';
+  let messageBody = '';
+  let hasMedia = false;
+  let mediaData = null;
+
+  if (msgContent.conversation) {
+    messageBody = msgContent.conversation;
+  } else if (msgContent.extendedTextMessage) {
+    messageBody = msgContent.extendedTextMessage.text;
+  } else if (msgContent.imageMessage) {
+    messageBody = msgContent.imageMessage.caption || '';
+    messageType = 'image';
+    hasMedia = true;
+    mediaData = msgContent.imageMessage;
+  } else if (msgContent.videoMessage) {
+    messageBody = msgContent.videoMessage.caption || '';
+    messageType = 'video';
+    hasMedia = true;
+    mediaData = msgContent.videoMessage;
+  } else if (msgContent.audioMessage) {
+    messageType = 'audio';
+    hasMedia = true;
+    mediaData = msgContent.audioMessage;
+  } else if (msgContent.documentMessage) {
+    messageBody = msgContent.documentMessage.fileName || '';
+    messageType = 'document';
+    hasMedia = true;
+    mediaData = msgContent.documentMessage;
+  } else if (msgContent.stickerMessage) {
+    messageType = 'sticker';
+    hasMedia = true;
+    mediaData = msgContent.stickerMessage;
+  }
+
+  // Download media if present
+  let mediaUrl = null;
+  let mediaFilename = null;
+  let mediaMimetype = null;
+  let mediaSize = null;
+
+  if (hasMedia && mediaData) {
+    console.log(`[Sync] 📥 Downloading ${messageType} for message ${messageId}...`);
+
+    try {
+      const uploadedMedia = await downloadAndUploadMedia(instanceName, key, mediaData, messageType);
+
+      if (uploadedMedia) {
+        mediaUrl = uploadedMedia.public_url;
+        mediaFilename = uploadedMedia.filename;
+        mediaMimetype = uploadedMedia.mimetype;
+        mediaSize = uploadedMedia.size_bytes;
+        console.log(`[Sync] ✅ Media downloaded: ${mediaFilename}`);
+      }
+    } catch (mediaError) {
+      console.error(`[Sync] ⚠️ Media download failed (continuing anyway):`, mediaError);
+      // Continue without media - don't block the entire message
+    }
+  }
+
+  // Insert message
+  const { data: insertedMessage, error: messageError } = await supabaseAdmin
+    .from('messages')
+    .insert({
+      session_id: sessionId,
+      contact_id: contactId,
+      waha_message_id: messageId,
+      message_type: messageType,
+      body: messageBody,
+      from_me: fromMe,
+      ack: fromMe ? 'DEVICE' : 'READ', // Outgoing: DEVICE, Incoming: READ
+      has_media: hasMedia,
+      media_url: mediaUrl,
+      media_filename: mediaFilename,
+      media_mimetype: mediaMimetype,
+      timestamp: new Date(messageTimestamp * 1000).toISOString(),
+      raw_payload: messageData
+    })
+    .select()
+    .single();
+
+  if (messageError) {
+    throw messageError;
+  }
+
+  // If media was downloaded, also save to message_media table
+  if (hasMedia && mediaUrl) {
+    await supabaseAdmin
+      .from('message_media')
+      .insert({
+        message_id: insertedMessage.id,
+        media_type: messageType,
+        file_url: mediaUrl,
+        file_name: mediaFilename,
+        mime_type: mediaMimetype,
+        file_size: mediaSize,
+        download_status: 'completed'
+      });
+  }
+}
+
+/**
+ * Process and save a single message (WITHOUT media download for speed)
+ * Used in initial sync where we only need basic messages
  */
 async function processAndSaveMessage(sessionId, messageData, contactPhone) {
   const {
@@ -212,15 +427,16 @@ async function processAndSaveMessage(sessionId, messageData, contactPhone) {
 }
 
 /**
- * Initial message history sync - Syncs ALL chats and messages
- * Use this when first connecting a session
+ * Initial message history sync - Syncs LAST N messages per chat
+ * Use this when first connecting a session (lightweight, fast)
  *
  * @param {string} sessionId - UUID of the session
+ * @param {number} messagesLimit - How many messages to fetch per chat (default: 10)
  * @param {Function} onProgress - Optional progress callback
  * @returns {Object} - Sync results
  */
-async function initialMessageSync(sessionId, onProgress = null) {
-  console.log(`[Sync] Starting INITIAL sync for session: ${sessionId}`);
+async function initialMessageSync(sessionId, messagesLimit = 10, onProgress = null) {
+  console.log(`[Sync] Starting INITIAL sync for session: ${sessionId} (limit: ${messagesLimit} messages/chat)`);
 
   try {
     // Get session details
@@ -310,13 +526,13 @@ async function initialMessageSync(sessionId, onProgress = null) {
             })
             .eq('id', contactId);
 
-          // Fetch messages for this chat
-          console.log(`[Sync] Fetching messages for: ${phoneNumber}`);
+          // Fetch ONLY LAST N messages for this chat (fast initial sync)
+          console.log(`[Sync] Fetching last ${messagesLimit} messages for: ${phoneNumber}`);
 
           const messagesResponse = await getChatMessages(
             session.session_name,
             chat.id,
-            RATE_LIMIT.MAX_MESSAGES_PER_CHAT
+            messagesLimit // Use parameter instead of hardcoded limit
           );
 
           // Debug: Log the raw response structure
