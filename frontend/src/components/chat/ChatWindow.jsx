@@ -120,6 +120,7 @@ export default function ChatWindow() {
 
 function MessageBubble({ message }) {
   const isFromMe = message.from_me;
+  const hasMedia = message.has_media && message.media_url;
 
   return (
     <div className={`flex ${isFromMe ? 'justify-end' : 'justify-start'} message-bubble`}>
@@ -130,7 +131,13 @@ function MessageBubble({ message }) {
             : 'bg-wa-panel text-white border border-wa-border'
         }`}
       >
-        <p className="text-sm break-words">{message.body}</p>
+        {/* Render Media */}
+        {hasMedia && <MediaContent message={message} />}
+
+        {/* Render Text Body */}
+        {message.body && (
+          <p className="text-sm break-words">{message.body}</p>
+        )}
 
         <div className="flex items-center justify-end mt-1 space-x-1">
           <span className="text-xs text-gray-300 opacity-70">
@@ -142,6 +149,128 @@ function MessageBubble({ message }) {
       </div>
     </div>
   );
+}
+
+function MediaContent({ message }) {
+  const { media_url, media_mimetype, media_filename, message_type } = message;
+
+  // IMAGE
+  if (message_type === 'image' || media_mimetype?.startsWith('image/')) {
+    return (
+      <div className="mb-2">
+        <img
+          src={media_url}
+          alt={media_filename || 'Image'}
+          className="max-w-full rounded-lg cursor-pointer hover:opacity-90 transition"
+          onClick={() => window.open(media_url, '_blank')}
+          loading="lazy"
+        />
+      </div>
+    );
+  }
+
+  // VIDEO
+  if (message_type === 'video' || media_mimetype?.startsWith('video/')) {
+    return (
+      <div className="mb-2">
+        <video
+          src={media_url}
+          controls
+          className="max-w-full rounded-lg"
+          preload="metadata"
+        >
+          Your browser does not support video playback.
+        </video>
+      </div>
+    );
+  }
+
+  // AUDIO
+  if (message_type === 'audio' || message_type === 'ptt' || media_mimetype?.startsWith('audio/')) {
+    return (
+      <div className="mb-2">
+        <audio
+          src={media_url}
+          controls
+          className="w-full"
+          preload="metadata"
+        >
+          Your browser does not support audio playback.
+        </audio>
+      </div>
+    );
+  }
+
+  // DOCUMENT (PDF, Word, Excel, etc.)
+  if (message_type === 'document' || media_mimetype?.includes('application/')) {
+    return (
+      <div className="mb-2 bg-gray-700 rounded-lg p-3 flex items-center space-x-3">
+        <div className="flex-shrink-0">
+          <svg className="w-10 h-10 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+            <path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" />
+          </svg>
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-white truncate">
+            {media_filename || 'Document'}
+          </p>
+          <p className="text-xs text-gray-400">
+            {getFileType(media_mimetype)}
+          </p>
+        </div>
+        <a
+          href={media_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex-shrink-0 text-blue-400 hover:text-blue-300"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+        </a>
+      </div>
+    );
+  }
+
+  // STICKER
+  if (message_type === 'sticker') {
+    return (
+      <div className="mb-2">
+        <img
+          src={media_url}
+          alt="Sticker"
+          className="max-w-xs rounded-lg"
+          loading="lazy"
+        />
+      </div>
+    );
+  }
+
+  // FALLBACK
+  return (
+    <div className="mb-2 text-xs text-gray-400">
+      📎 {media_filename || 'Media file'}
+    </div>
+  );
+}
+
+function getFileType(mimetype) {
+  if (!mimetype) return 'File';
+
+  const typeMap = {
+    'application/pdf': 'PDF Document',
+    'application/msword': 'Word Document',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'Word Document',
+    'application/vnd.ms-excel': 'Excel Spreadsheet',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'Excel Spreadsheet',
+    'application/vnd.ms-powerpoint': 'PowerPoint Presentation',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'PowerPoint Presentation',
+    'application/zip': 'ZIP Archive',
+    'application/x-rar-compressed': 'RAR Archive',
+    'text/plain': 'Text File',
+  };
+
+  return typeMap[mimetype] || mimetype.split('/')[1]?.toUpperCase() || 'File';
 }
 
 function MessageAckIcon({ ack }) {
