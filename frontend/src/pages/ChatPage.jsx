@@ -1,17 +1,19 @@
 /**
- * Chat Page - WhatsApp Web Clone
+ * Chat Page - Professional 3-Column WhatsApp CRM
+ * Layout: Sessions List | Chats List | Messages Window
  */
 
 import { useEffect, useState } from 'react';
 import { useChatStore } from '../stores/chatStore';
 import { useAuthStore } from '../stores/authStore';
-import ChatSidebar from '../components/chat/ChatSidebar';
+import SessionsList from '../components/chat/SessionsList';
+import ChatsList from '../components/chat/ChatsList';
 import ChatWindow from '../components/chat/ChatWindow';
 import SessionModal from '../components/modals/SessionModal';
 
 export default function ChatPage() {
   const { user } = useAuthStore();
-  const { currentSession, fetchSessions } = useChatStore();
+  const { currentSession, currentChat, fetchSessions } = useChatStore();
   const [showSessionModal, setShowSessionModal] = useState(false);
 
   useEffect(() => {
@@ -30,14 +32,17 @@ export default function ChatPage() {
 
   return (
     <div className="h-screen flex bg-wa-bg">
-      {/* Sidebar */}
-      <ChatSidebar
+      {/* Left Column: Sessions List (250px) */}
+      <SessionsList
         onNewSession={() => setShowSessionModal(true)}
         isAdmin={isAdmin}
       />
 
-      {/* Chat Window */}
-      {currentSession ? (
+      {/* Middle Column: Chats List (350px) */}
+      <ChatsList isAdmin={isAdmin} />
+
+      {/* Right Column: Messages Window (Flexible) */}
+      {currentChat ? (
         <ChatWindow />
       ) : (
         <div className="flex-1 flex items-center justify-center bg-wa-panel border-l border-wa-border">
@@ -52,9 +57,16 @@ export default function ChatPage() {
             <h2 className="text-2xl font-semibold text-gray-300 mb-2">
               WhatsApp CRM
             </h2>
-            <p className="text-gray-500">
-              Select a session from the sidebar to start messaging
+            <p className="text-gray-500 mb-1">
+              {currentSession
+                ? 'Select a chat to view messages'
+                : 'Select a session to start'}
             </p>
+            {currentSession && currentSession.status !== 'CONNECTED' && (
+              <p className="text-yellow-400 text-sm mt-2">
+                ⚠️ Session disconnected - Reconnect to sync messages
+              </p>
+            )}
           </div>
         </div>
       )}

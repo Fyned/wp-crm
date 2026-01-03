@@ -132,9 +132,16 @@ export const sessionAPI = {
     return response.data;
   },
 
+  // Reconnect session
+  reconnectSession: async (sessionId) => {
+    const response = await api.post(`/sessions/${sessionId}/reconnect`);
+    return response.data;
+  },
+
   // Sync operations
-  syncInitial: async (sessionId) => {
-    const response = await api.post(`/sessions/${sessionId}/sync/initial`);
+  syncInitial: async (sessionId, options = {}) => {
+    const limit = options.limit || 10;
+    const response = await api.post(`/sessions/${sessionId}/sync/initial?limit=${limit}`);
     return response.data;
   },
 
