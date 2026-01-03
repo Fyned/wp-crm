@@ -118,16 +118,41 @@ async function sendMediaMessage(instanceName, phoneNumber, mediaUrl, caption = '
 }
 
 // Get chat messages (from Evolution API's internal storage)
+// NOTE: Evolution API v1.8.4 has a bug where remoteJid filter doesn't work
+// Workaround: Fetch more messages and filter client-side
 async function getChatMessages(instanceName, phoneNumber, limit = 50) {
+  console.log(`[Evolution API] Fetching messages for ${phoneNumber} (with client-side filter workaround)`);
+
+  // Fetch more messages than needed since API doesn't filter properly
+  const fetchLimit = Math.max(limit * 10, 500); // Fetch 10x more to ensure we get enough
+
   const response = await evolutionClient.post(`/chat/findMessages/${instanceName}`, {
     where: {
       key: {
         remoteJid: phoneNumber
       }
     },
-    limit
+    limit: fetchLimit
   });
-  return response.data;
+
+  const allMessages = response.data || [];
+  console.log(`[Evolution API] Received ${allMessages.length} messages from API`);
+
+  // Client-side filter: Only keep messages from this specific chat
+  const filteredMessages = allMessages.filter(msg => {
+    const msgRemoteJid = msg?.key?.remoteJid;
+    return msgRemoteJid === phoneNumber;
+  });
+
+  console.log(`[Evolution API] Filtered to ${filteredMessages.length} messages for ${phoneNumber}`);
+
+  // Sort by timestamp (newest first) and limit
+  const sortedMessages = filteredMessages
+    .sort((a, b) => (b.messageTimestamp || 0) - (a.messageTimestamp || 0))
+    .slice(0, limit);
+
+  console.log(`[Evolution API] Returning ${sortedMessages.length} most recent messages`);
+  return sortedMessages;
 }
 
 // Get all chats (with pagination support to fetch ALL chats)
