@@ -135,28 +135,56 @@ async function getAllChats(instanceName) {
   const allChats = [];
   let page = 1;
   const limit = 100; // Fetch 100 chats per page
+  const MAX_PAGES = 50; // Safety limit: max 5000 chats (prevent infinite loop)
+  const seenIds = new Set(); // Track chat IDs to detect duplicates
 
-  while (true) {
+  while (page <= MAX_PAGES) {
+    console.log(`[Evolution API] Fetching chats page ${page} for ${instanceName}...`);
+
     const response = await evolutionClient.get(`/chat/findChats/${instanceName}`, {
       params: { page, limit }
     });
 
     const chats = response.data || [];
+    console.log(`[Evolution API] Page ${page} returned ${chats.length} chats`);
 
     if (chats.length === 0) {
+      console.log(`[Evolution API] No more chats on page ${page}, stopping pagination`);
       break; // No more chats
     }
 
-    allChats.push(...chats);
+    // Check for duplicate chats (indicates pagination not working)
+    let newChatsCount = 0;
+    for (const chat of chats) {
+      const chatId = chat.id;
+      if (!seenIds.has(chatId)) {
+        seenIds.add(chatId);
+        allChats.push(chat);
+        newChatsCount++;
+      }
+    }
+
+    console.log(`[Evolution API] Added ${newChatsCount} new chats (${chats.length - newChatsCount} duplicates)`);
+
+    // If all chats on this page were duplicates, pagination is broken - stop
+    if (newChatsCount === 0) {
+      console.log(`[Evolution API] All chats on page ${page} were duplicates - pagination appears broken, stopping`);
+      break;
+    }
 
     if (chats.length < limit) {
+      console.log(`[Evolution API] Page ${page} has fewer than ${limit} chats, assuming last page`);
       break; // Last page
     }
 
     page++;
   }
 
-  console.log(`[Evolution API] Fetched total ${allChats.length} chats from all pages`);
+  if (page > MAX_PAGES) {
+    console.warn(`[Evolution API] Hit maximum page limit (${MAX_PAGES}), stopping pagination`);
+  }
+
+  console.log(`[Evolution API] Fetched total ${allChats.length} unique chats from ${page} pages`);
   return allChats;
 }
 
