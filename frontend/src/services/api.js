@@ -97,6 +97,56 @@ export const userAPI = {
   },
 };
 
+// ===== Team Management API =====
+
+export const teamAPI = {
+  createTeam: async (teamData) => {
+    const response = await api.post('/teams', teamData);
+    return response.data;
+  },
+
+  getTeams: async () => {
+    const response = await api.get('/teams');
+    return response.data;
+  },
+
+  getMyTeams: async () => {
+    const response = await api.get('/teams/my-teams');
+    return response.data;
+  },
+
+  getTeamById: async (teamId) => {
+    const response = await api.get(`/teams/${teamId}`);
+    return response.data;
+  },
+
+  updateTeam: async (teamId, updates) => {
+    const response = await api.put(`/teams/${teamId}`, updates);
+    return response.data;
+  },
+
+  deleteTeam: async (teamId) => {
+    const response = await api.delete(`/teams/${teamId}`);
+    return response.data;
+  },
+
+  // Team Members
+  getTeamMembers: async (teamId) => {
+    const response = await api.get(`/teams/${teamId}/members`);
+    return response.data;
+  },
+
+  addMember: async (teamId, userId) => {
+    const response = await api.post(`/teams/${teamId}/members`, { userId });
+    return response.data;
+  },
+
+  removeMember: async (teamId, userId) => {
+    const response = await api.delete(`/teams/${teamId}/members/${userId}`);
+    return response.data;
+  },
+};
+
 // ===== Session API =====
 
 export const sessionAPI = {
