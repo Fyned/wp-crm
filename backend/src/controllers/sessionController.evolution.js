@@ -342,12 +342,22 @@ async function assignSession(req, res) {
         assigned_to_team_id,
         assigned_by_admin_id: adminId
       })
-      .select()
+      .select(`
+        id,
+        session_id,
+        assigned_to_user_id,
+        assigned_to_team_id,
+        assigned_at,
+        assigned_user:profiles!session_assignments_assigned_to_user_id_fkey(id, username, full_name),
+        assigned_team:teams!session_assignments_assigned_to_team_id_fkey(id, name)
+      `)
       .single();
 
     if (error) {
       throw error;
     }
+
+    console.log(`[Session] Session ${sessionId} assigned to ${assigned_to_user_id ? 'user' : 'team'}`);
 
     res.status(201).json({
       success: true,
@@ -358,6 +368,111 @@ async function assignSession(req, res) {
     res.status(500).json({
       error: 'Internal Server Error',
       message: 'Failed to assign session'
+    });
+  }
+}
+
+/**
+ * Get session assignments
+ * GET /api/sessions/:sessionId/assignments
+ */
+async function getSessionAssignments(req, res) {
+  try {
+    const { sessionId } = req.params;
+
+    // Verify access
+    const hasAccess = await checkSessionAccess(sessionId, req.profile);
+    if (!hasAccess) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Access denied'
+      });
+    }
+
+    // Get all assignments for this session
+    const { data: assignments, error } = await supabaseAdmin
+      .from('session_assignments')
+      .select(`
+        id,
+        session_id,
+        assigned_to_user_id,
+        assigned_to_team_id,
+        assigned_at,
+        assigned_user:profiles!session_assignments_assigned_to_user_id_fkey(id, username, full_name),
+        assigned_team:teams!session_assignments_assigned_to_team_id_fkey(id, name)
+      `)
+      .eq('session_id', sessionId);
+
+    if (error) {
+      throw error;
+    }
+
+    res.json({
+      success: true,
+      data: assignments || []
+    });
+  } catch (error) {
+    console.error('[Session] Get assignments error:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Failed to get session assignments'
+    });
+  }
+}
+
+/**
+ * Unassign session (remove assignment)
+ * DELETE /api/sessions/:sessionId/assignments/:assignmentId
+ */
+async function unassignSession(req, res) {
+  try {
+    const { sessionId, assignmentId } = req.params;
+    const adminId = req.profile.id;
+
+    // Get assignment to verify ownership
+    const { data: assignment } = await supabaseAdmin
+      .from('session_assignments')
+      .select('id, session_id, session:sessions(created_by_admin_id)')
+      .eq('id', assignmentId)
+      .eq('session_id', sessionId)
+      .single();
+
+    if (!assignment) {
+      return res.status(404).json({
+        error: 'Not Found',
+        message: 'Assignment not found'
+      });
+    }
+
+    // Check permissions
+    if (req.profile.role !== 'super_admin' && assignment.session.created_by_admin_id !== adminId) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'You can only unassign your own sessions'
+      });
+    }
+
+    // Delete assignment
+    const { error } = await supabaseAdmin
+      .from('session_assignments')
+      .delete()
+      .eq('id', assignmentId);
+
+    if (error) {
+      throw error;
+    }
+
+    console.log(`[Session] Assignment ${assignmentId} removed`);
+
+    res.json({
+      success: true,
+      message: 'Assignment removed successfully'
+    });
+  } catch (error) {
+    console.error('[Session] Unassign error:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Failed to remove assignment'
     });
   }
 }
@@ -701,6 +816,8 @@ module.exports = {
   getSessionQRCode,
   requestSessionPairingCode,
   assignSession,
+  getSessionAssignments,
+  unassignSession,
   deleteSession,
   getSessionDetails,
   reconnectSession,

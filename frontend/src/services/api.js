@@ -172,8 +172,19 @@ export const sessionAPI = {
     return response.data;
   },
 
+  // Session Assignments
   assignSession: async (sessionId, assignment) => {
     const response = await api.post(`/sessions/${sessionId}/assign`, assignment);
+    return response.data;
+  },
+
+  getSessionAssignments: async (sessionId) => {
+    const response = await api.get(`/sessions/${sessionId}/assignments`);
+    return response.data;
+  },
+
+  unassignSession: async (sessionId, assignmentId) => {
+    const response = await api.delete(`/sessions/${sessionId}/assignments/${assignmentId}`);
     return response.data;
   },
 

@@ -15,10 +15,13 @@ import {
   SignalSlashIcon,
   PencilIcon,
   TagIcon,
-  UserGroupIcon
+  UserGroupIcon,
+  UserIcon
 } from '@heroicons/react/24/outline';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import SessionAssignmentModal from '../modals/SessionAssignmentModal';
+import { sessionAPI } from '../../services/api';
 
 export default function SessionsList({ onNewSession, isAdmin }) {
   const navigate = useNavigate();
@@ -27,6 +30,9 @@ export default function SessionsList({ onNewSession, isAdmin }) {
   const [editingSession, setEditingSession] = useState(null);
   const [customName, setCustomName] = useState('');
   const [notes, setNotes] = useState('');
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [sessionToAssign, setSessionToAssign] = useState(null);
+  const [assignmentsMap, setAssignmentsMap] = useState({});
 
   const handleSessionSelect = async (session) => {
     await setCurrentSession(session);
@@ -36,6 +42,41 @@ export default function SessionsList({ onNewSession, isAdmin }) {
     logout();
     navigate('/login');
   };
+
+  const handleOpenAssignModal = (session, e) => {
+    e.stopPropagation();
+    setSessionToAssign(session);
+    setShowAssignModal(true);
+  };
+
+  const handleCloseAssignModal = () => {
+    setShowAssignModal(false);
+    setSessionToAssign(null);
+  };
+
+  const loadAssignments = async () => {
+    try {
+      const assignmentsData = {};
+      for (const session of sessions) {
+        const response = await sessionAPI.getSessionAssignments(session.id);
+        assignmentsData[session.id] = response.data || [];
+      }
+      setAssignmentsMap(assignmentsData);
+    } catch (error) {
+      console.error('Failed to load assignments:', error);
+    }
+  };
+
+  const handleAssignmentUpdate = () => {
+    loadAssignments(); // Reload assignments after update
+  };
+
+  // Load assignments when sessions change
+  useEffect(() => {
+    if (sessions.length > 0) {
+      loadAssignments();
+    }
+  }, [sessions]);
 
   const handleEditMetadata = (session, e) => {
     e.stopPropagation();
@@ -134,6 +175,7 @@ export default function SessionsList({ onNewSession, isAdmin }) {
               isActive={currentSession?.id === session.id}
               onClick={() => handleSessionSelect(session)}
               onEdit={handleEditMetadata}
+              onAssign={handleOpenAssignModal}
               isAdmin={isAdmin}
               isEditing={editingSession === session.id}
               customName={customName}
@@ -142,10 +184,20 @@ export default function SessionsList({ onNewSession, isAdmin }) {
               setNotes={setNotes}
               onSave={() => handleSaveMetadata(session.id)}
               onCancel={() => setEditingSession(null)}
+              assignments={assignmentsMap[session.id] || []}
             />
           ))
         )}
       </div>
+
+      {/* Session Assignment Modal */}
+      {showAssignModal && sessionToAssign && (
+        <SessionAssignmentModal
+          session={sessionToAssign}
+          onClose={handleCloseAssignModal}
+          onUpdate={handleAssignmentUpdate}
+        />
+      )}
     </div>
   );
 }
@@ -155,6 +207,7 @@ function SessionItem({
   isActive,
   onClick,
   onEdit,
+  onAssign,
   isAdmin,
   isEditing,
   customName,
@@ -162,7 +215,8 @@ function SessionItem({
   notes,
   setNotes,
   onSave,
-  onCancel
+  onCancel,
+  assignments
 }) {
   const isConnected = session.status === 'CONNECTED';
   const displayName = session.custom_label || session.phone_number || session.session_name;
@@ -248,17 +302,50 @@ function SessionItem({
               ))}
             </div>
           )}
+
+          {/* Assignments */}
+          {assignments && assignments.length > 0 && (
+            <div className="flex items-center flex-wrap gap-1 mt-2">
+              {assignments.map((assignment) => (
+                <span
+                  key={assignment.id}
+                  className="inline-flex items-center space-x-1 px-2 py-0.5 bg-primary-500/20 border border-primary-500/30 rounded text-xs text-primary-300"
+                >
+                  {assignment.assigned_to_team_id ? (
+                    <>
+                      <UserGroupIcon className="w-3 h-3" />
+                      <span>{assignment.assigned_team?.name}</span>
+                    </>
+                  ) : (
+                    <>
+                      <UserIcon className="w-3 h-3" />
+                      <span>{assignment.assigned_user?.username}</span>
+                    </>
+                  )}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Edit Button */}
+        {/* Action Buttons */}
         {isAdmin && (
-          <button
-            onClick={(e) => onEdit(session, e)}
-            className="opacity-0 group-hover:opacity-100 p-1 hover:bg-wa-panel rounded transition"
-            title="Edit metadata"
-          >
-            <PencilIcon className="w-4 h-4 text-gray-400" />
-          </button>
+          <div className="flex flex-col space-y-1">
+            <button
+              onClick={(e) => onAssign(session, e)}
+              className="opacity-0 group-hover:opacity-100 p-1 hover:bg-wa-panel rounded transition"
+              title="Assign session"
+            >
+              <UserGroupIcon className="w-4 h-4 text-primary-400" />
+            </button>
+            <button
+              onClick={(e) => onEdit(session, e)}
+              className="opacity-0 group-hover:opacity-100 p-1 hover:bg-wa-panel rounded transition"
+              title="Edit metadata"
+            >
+              <PencilIcon className="w-4 h-4 text-gray-400" />
+            </button>
+          </div>
         )}
       </div>
     </div>
