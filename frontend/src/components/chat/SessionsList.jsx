@@ -14,7 +14,8 @@ import {
   SignalIcon,
   SignalSlashIcon,
   PencilIcon,
-  TagIcon
+  TagIcon,
+  UserGroupIcon
 } from '@heroicons/react/24/outline';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -69,6 +70,13 @@ export default function SessionsList({ onNewSession, isAdmin }) {
           </div>
 
           <div className="flex space-x-1">
+            <button
+              onClick={() => navigate('/teams')}
+              className="p-1.5 hover:bg-wa-hover rounded-full transition"
+              title="Teams"
+            >
+              <UserGroupIcon className="w-5 h-5 text-gray-400" />
+            </button>
             {isAdmin && (
               <button
                 onClick={() => navigate('/admin')}

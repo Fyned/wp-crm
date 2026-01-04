@@ -11,6 +11,7 @@ import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import AdminPage from './pages/AdminPage';
 import ChatPage from './pages/ChatPage';
+import TeamManagementPage from './pages/TeamManagementPage';
 
 // Protected Route Component
 function ProtectedRoute({ children, adminOnly = false }) {
@@ -71,6 +72,15 @@ function App() {
           element={
             <ProtectedRoute adminOnly>
               <AdminPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/teams"
+          element={
+            <ProtectedRoute>
+              <TeamManagementPage />
             </ProtectedRoute>
           }
         />
