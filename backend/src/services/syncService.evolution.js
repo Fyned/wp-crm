@@ -591,21 +591,13 @@ async function initialMessageSync(sessionId, messagesLimit = 10, onProgress = nu
 
           console.log(`[Sync] Extracted ${messages.length} messages for ${phoneNumber}`);
 
-          // If contact has no name, try to extract from messages
-          if (!contactName && messages && messages.length > 0) {
-            for (const msg of messages) {
-              if (msg.pushName && msg.pushName !== phoneNumber) {
-                contactName = msg.pushName;
-                console.log(`[Sync] Extracted name from message: ${contactName}`);
+          // REMOVED: pushName extraction logic - it's unreliable!
+          // pushName in groups = last message sender's name (wrong!)
+          // Contact names should ONLY come from chat.name (WhatsApp saved name)
+          // If no name exists, leave it NULL - frontend will show phone number
 
-                // Update contact with extracted name
-                await supabaseAdmin
-                  .from('contacts')
-                  .update({ name: contactName })
-                  .eq('id', contactId);
-                break;
-              }
-            }
+          if (!contactName) {
+            console.log(`[Sync] No name found for ${phoneNumber} - leaving as NULL (will show phone number)`);
           }
 
           if (messages && messages.length > 0) {
