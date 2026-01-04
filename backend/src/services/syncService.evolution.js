@@ -348,7 +348,7 @@ async function processAndSaveMessageWithMedia(sessionId, contactId, messageData,
  * Process and save a single message (WITHOUT media download for speed)
  * Used in initial sync where we only need basic messages
  */
-async function processAndSaveMessage(sessionId, messageData, contactPhone) {
+async function processAndSaveMessage(sessionId, contactId, messageData, isGroup = false) {
   const {
     key,
     message: msgContent,
@@ -358,6 +358,10 @@ async function processAndSaveMessage(sessionId, messageData, contactPhone) {
 
   const messageId = key.id;
   const fromMe = key.fromMe;
+
+  // Extract participant info for group messages
+  const participant = key.participant; // Phone number of sender in group chats
+  const senderName = pushName; // Name of sender (for group messages)
 
   // Check if already exists
   const { data: existing } = await supabaseAdmin
@@ -370,14 +374,6 @@ async function processAndSaveMessage(sessionId, messageData, contactPhone) {
   if (existing) {
     return; // Skip duplicates
   }
-
-  // Get or create contact
-  const { data: contactId } = await supabaseAdmin.rpc('ensure_contact_exists', {
-    p_session_id: sessionId,
-    p_phone_number: contactPhone,
-    p_name: pushName || null,
-    p_is_group: false
-  });
 
   // Extract message content
   let messageType = 'text';
@@ -403,6 +399,20 @@ async function processAndSaveMessage(sessionId, messageData, contactPhone) {
     messageBody = msgContent.documentMessage.fileName || '';
     messageType = 'document';
     hasMedia = true;
+  }
+
+  // For group messages (incoming only), prefix sender name
+  if (isGroup && !fromMe && participant && senderName) {
+    const senderPhone = participant.split('@')[0]; // Extract phone from "905050969139@s.whatsapp.net"
+    const prefix = `${senderName} (${senderPhone})`;
+
+    // Add prefix to text messages
+    if (messageType === 'text' && messageBody) {
+      messageBody = `[${prefix}]: ${messageBody}`;
+    } else if (hasMedia) {
+      // For media messages, add sender to caption
+      messageBody = messageBody ? `[${prefix}]: ${messageBody}` : `[${prefix}]`;
+    }
   }
 
   // Insert message
@@ -607,7 +617,7 @@ async function initialMessageSync(sessionId, messagesLimit = 10, onProgress = nu
 
               for (const msg of msgBatch) {
                 try {
-                  await processAndSaveMessage(sessionId, msg, phoneNumber);
+                  await processAndSaveMessage(sessionId, contactId, msg, isGroup);
                   totalMessagesSynced++;
                 } catch (msgError) {
                   console.error('[Sync] Error saving message:', msgError);
