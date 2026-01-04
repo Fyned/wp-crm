@@ -83,9 +83,29 @@ const validateAddTeamMember = [
     .isUUID()
     .withMessage('Invalid team ID'),
 
-  body('user_id')
+  body('userId')
     .isUUID()
     .withMessage('Invalid user ID'),
+
+  handleValidationErrors
+];
+
+const validateUpdateTeam = [
+  param('teamId')
+    .isUUID()
+    .withMessage('Invalid team ID'),
+
+  body('name')
+    .optional()
+    .trim()
+    .isLength({ min: 2, max: 100 })
+    .withMessage('Team name must be 2-100 characters'),
+
+  body('description')
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage('Description must be max 500 characters'),
 
   handleValidationErrors
 ];
@@ -211,6 +231,7 @@ module.exports = {
   validateCreateUser,
   validateResetPassword,
   validateCreateTeam,
+  validateUpdateTeam,
   validateAddTeamMember,
   validateCreateSession,
   validateRequestPairingCode,

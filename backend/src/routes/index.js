@@ -8,6 +8,7 @@ const router = express.Router();
 // Controllers
 const authController = require('../controllers/authController');
 const userController = require('../controllers/userController');
+const teamController = require('../controllers/teamController');
 const sessionController = require('../controllers/sessionController.evolution');
 const messageController = require('../controllers/messageController.evolution');
 const webhookController = require('../controllers/webhookController.evolution');
@@ -19,6 +20,9 @@ const {
   validateLogin,
   validateCreateUser,
   validateResetPassword,
+  validateCreateTeam,
+  validateUpdateTeam,
+  validateAddTeamMember,
   validateCreateSession,
   validateRequestPairingCode,
   validateAssignSession,
@@ -52,6 +56,20 @@ router.get('/users/:userId', isAdmin, userController.getUserById);
 router.post('/users/:userId/reset-password', isAdmin, validateResetPassword, userController.resetPassword);
 router.delete('/users/:userId', isAdmin, userController.deactivateUser);
 router.post('/users/:userId/reactivate', isAdmin, userController.reactivateUser);
+
+// ===== Team Management (Admin only) =====
+
+router.post('/teams', isAdmin, validateCreateTeam, teamController.createTeam);
+router.get('/teams', teamController.getTeams); // All authenticated users can view their teams
+router.get('/teams/my-teams', teamController.getMyTeams); // Get teams user belongs to
+router.get('/teams/:teamId', teamController.getTeamById);
+router.put('/teams/:teamId', isAdmin, validateUpdateTeam, teamController.updateTeam);
+router.delete('/teams/:teamId', isAdmin, teamController.deleteTeam);
+
+// Team Members
+router.post('/teams/:teamId/members', isAdmin, validateAddTeamMember, teamController.addMember);
+router.delete('/teams/:teamId/members/:userId', isAdmin, teamController.removeMember);
+router.get('/teams/:teamId/members', teamController.getMembers);
 
 // ===== Session Management =====
 
