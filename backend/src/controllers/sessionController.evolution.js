@@ -118,6 +118,7 @@ async function createSession(req, res) {
 /**
  * Get all sessions accessible to current user
  * GET /api/sessions
+ * RBAC: super_admin sees all, admin sees own, team_member sees assigned
  */
 async function getSessions(req, res) {
   try {
@@ -135,26 +136,55 @@ async function getSessions(req, res) {
         created_at
       `);
 
-    // Super admin sees all
+    // RBAC Filtering
     if (role === 'super_admin') {
-      // No filter
+      // Super admin sees all sessions - no filter
+      console.log(`[Session] Super admin ${userId} fetching all sessions`);
     } else if (role === 'admin') {
-      // Admin sees only their sessions
+      // Admin sees only sessions they created
+      console.log(`[Session] Admin ${userId} fetching own sessions`);
       query = query.eq('created_by_admin_id', userId);
-    } else {
-      // Team member sees assigned sessions
-      const { data: assignments } = await supabaseAdmin
-        .from('session_assignments')
-        .select('session_id')
-        .or(`assigned_to_user_id.eq.${userId},assigned_to_team_id.in.(SELECT team_id FROM team_members WHERE user_id = '${userId}')`);
+    } else if (role === 'team_member') {
+      // Team member sees sessions assigned to them OR their teams
+      console.log(`[Session] Team member ${userId} fetching assigned sessions`);
 
+      // Get user's team IDs
+      const { data: teamMemberships } = await supabaseAdmin
+        .from('team_members')
+        .select('team_id')
+        .eq('user_id', userId);
+
+      const userTeamIds = teamMemberships?.map(tm => tm.team_id) || [];
+
+      // Get session assignments for user directly OR for their teams
+      let assignmentQuery = supabaseAdmin
+        .from('session_assignments')
+        .select('session_id');
+
+      if (userTeamIds.length > 0) {
+        // User is in teams - check both user assignments AND team assignments
+        assignmentQuery = assignmentQuery.or(
+          `assigned_to_user_id.eq.${userId},assigned_to_team_id.in.(${userTeamIds.join(',')})`
+        );
+      } else {
+        // User not in any teams - only check user assignments
+        assignmentQuery = assignmentQuery.eq('assigned_to_user_id', userId);
+      }
+
+      const { data: assignments } = await assignmentQuery;
       const sessionIds = assignments?.map(a => a.session_id) || [];
 
       if (sessionIds.length === 0) {
+        console.log(`[Session] Team member ${userId} has no assigned sessions`);
         return res.json({ success: true, data: [] });
       }
 
+      console.log(`[Session] Team member ${userId} has access to ${sessionIds.length} sessions`);
       query = query.in('id', sessionIds);
+    } else {
+      // Unknown role - deny access
+      console.warn(`[Session] Unknown role '${role}' for user ${userId}`);
+      return res.json({ success: true, data: [] });
     }
 
     const { data: sessions, error } = await query.order('created_at', { ascending: false });
@@ -180,6 +210,8 @@ async function getSessions(req, res) {
         }
       })
     );
+
+    console.log(`[Session] Returning ${enrichedSessions.length} sessions for user ${userId} (${role})`);
 
     res.json({
       success: true,
@@ -587,45 +619,63 @@ async function getSessionDetails(req, res) {
 }
 
 /**
- * Helper: Check if user has access to session
+ * Helper: Check if user has access to session (RBAC)
+ * - super_admin: access to all sessions
+ * - admin: access to sessions they created
+ * - team_member: access to sessions assigned to them or their teams
  */
 async function checkSessionAccess(sessionId, profile) {
-  if (profile.role === 'super_admin') {
+  const { role, id: userId } = profile;
+
+  // Super admin has access to everything
+  if (role === 'super_admin') {
     return true;
   }
 
+  // Check if session exists and get creator
   const { data: session } = await supabaseAdmin
     .from('sessions')
     .select('created_by_admin_id')
     .eq('id', sessionId)
     .single();
 
-  if (profile.role === 'admin' && session?.created_by_admin_id === profile.id) {
+  if (!session) {
+    return false;
+  }
+
+  // Admin has access to sessions they created
+  if (role === 'admin' && session.created_by_admin_id === userId) {
     return true;
   }
 
-  // Check assignments
-  const { data: assignments } = await supabaseAdmin
-    .from('session_assignments')
-    .select('id, assigned_to_team_id')
-    .eq('session_id', sessionId);
+  // Team member: check assignments
+  if (role === 'team_member') {
+    // Get user's team IDs
+    const { data: teamMemberships } = await supabaseAdmin
+      .from('team_members')
+      .select('team_id')
+      .eq('user_id', userId);
 
-  for (const assignment of assignments || []) {
-    if (assignment.assigned_to_user_id === profile.id) {
-      return true;
+    const userTeamIds = teamMemberships?.map(tm => tm.team_id) || [];
+
+    // Check if session is assigned to user OR their teams
+    let assignmentQuery = supabaseAdmin
+      .from('session_assignments')
+      .select('id')
+      .eq('session_id', sessionId);
+
+    if (userTeamIds.length > 0) {
+      assignmentQuery = assignmentQuery.or(
+        `assigned_to_user_id.eq.${userId},assigned_to_team_id.in.(${userTeamIds.join(',')})`
+      );
+    } else {
+      assignmentQuery = assignmentQuery.eq('assigned_to_user_id', userId);
     }
 
-    if (assignment.assigned_to_team_id) {
-      const { data: membership } = await supabaseAdmin
-        .from('team_members')
-        .select('id')
-        .eq('team_id', assignment.assigned_to_team_id)
-        .eq('user_id', profile.id)
-        .single();
+    const { data: assignments } = await assignmentQuery;
 
-      if (membership) {
-        return true;
-      }
+    if (assignments && assignments.length > 0) {
+      return true;
     }
   }
 

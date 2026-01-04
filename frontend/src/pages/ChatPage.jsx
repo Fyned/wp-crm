@@ -10,11 +10,13 @@ import SessionsList from '../components/chat/SessionsList';
 import ChatsList from '../components/chat/ChatsList';
 import ChatWindow from '../components/chat/ChatWindow';
 import SessionModal from '../components/modals/SessionModal';
+import { usePermissions } from '../utils/permissions';
 
 export default function ChatPage() {
   const { user } = useAuthStore();
   const { currentSession, currentChat, fetchSessions } = useChatStore();
   const [showSessionModal, setShowSessionModal] = useState(false);
+  const permissions = usePermissions(user?.role);
 
   useEffect(() => {
     // Initial fetch
@@ -28,18 +30,16 @@ export default function ChatPage() {
     return () => clearInterval(interval);
   }, [fetchSessions]);
 
-  const isAdmin = ['admin', 'super_admin'].includes(user?.role);
-
   return (
     <div className="h-screen flex bg-wa-bg">
       {/* Left Column: Sessions List (250px) */}
       <SessionsList
         onNewSession={() => setShowSessionModal(true)}
-        isAdmin={isAdmin}
+        permissions={permissions}
       />
 
       {/* Middle Column: Chats List (350px) */}
-      <ChatsList isAdmin={isAdmin} />
+      <ChatsList permissions={permissions} />
 
       {/* Right Column: Messages Window (Flexible) */}
       {currentChat ? (

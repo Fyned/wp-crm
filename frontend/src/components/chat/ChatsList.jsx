@@ -18,7 +18,7 @@ import {
 import { sessionAPI } from '../../services/api';
 import toast from 'react-hot-toast';
 
-export default function ChatsList({ isAdmin }) {
+export default function ChatsList({ permissions }) {
   const { currentSession, chats, currentChat, setCurrentChat, fetchChats } = useChatStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [editingChat, setEditingChat] = useState(null);
@@ -138,7 +138,7 @@ export default function ChatsList({ isAdmin }) {
         </div>
 
         {/* Action Buttons (Admin Only) */}
-        {isAdmin && (
+        {permissions?.isAdmin && (
           <div className="flex space-x-2 mt-3">
             <button
               onClick={handleSyncMessages}
@@ -148,14 +148,16 @@ export default function ChatsList({ isAdmin }) {
               <ArrowPathIcon className="w-3.5 h-3.5" />
               <span>Sync</span>
             </button>
-            <button
-              onClick={handleDeleteSession}
-              className="flex-1 flex items-center justify-center space-x-1 px-3 py-1.5 bg-red-500/20 border border-red-500/50 hover:bg-red-500/30 rounded-lg text-xs text-red-400 transition"
-              title="Delete Session"
-            >
-              <TrashIcon className="w-3.5 h-3.5" />
-              <span>Delete</span>
-            </button>
+            {permissions?.canDeleteSessions && (
+              <button
+                onClick={handleDeleteSession}
+                className="flex-1 flex items-center justify-center space-x-1 px-3 py-1.5 bg-red-500/20 border border-red-500/50 hover:bg-red-500/30 rounded-lg text-xs text-red-400 transition"
+                title="Delete Session"
+              >
+                <TrashIcon className="w-3.5 h-3.5" />
+                <span>Delete</span>
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -175,7 +177,7 @@ export default function ChatsList({ isAdmin }) {
                 {currentSession.status !== 'CONNECTED' && (
                   <p className="text-xs mt-2 text-yellow-400">Session not connected</p>
                 )}
-                {currentSession.status === 'CONNECTED' && isAdmin && (
+                {currentSession.status === 'CONNECTED' && permissions?.isAdmin && (
                   <button
                     onClick={handleSyncMessages}
                     className="mt-3 px-4 py-2 bg-primary-500 text-white rounded-lg text-sm hover:bg-primary-600 transition"

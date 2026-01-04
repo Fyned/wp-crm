@@ -23,7 +23,7 @@ import toast from 'react-hot-toast';
 import SessionAssignmentModal from '../modals/SessionAssignmentModal';
 import { sessionAPI } from '../../services/api';
 
-export default function SessionsList({ onNewSession, isAdmin }) {
+export default function SessionsList({ onNewSession, permissions }) {
   const navigate = useNavigate();
   const { logout, user } = useAuthStore();
   const { sessions, currentSession, setCurrentSession } = useChatStore();
@@ -140,7 +140,7 @@ export default function SessionsList({ onNewSession, isAdmin }) {
         {/* Title */}
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold text-white">Sessions</h3>
-          {isAdmin && (
+          {permissions?.canCreateSessions && (
             <button
               onClick={onNewSession}
               className="p-1.5 hover:bg-wa-hover rounded-full transition"
@@ -158,7 +158,7 @@ export default function SessionsList({ onNewSession, isAdmin }) {
           <div className="p-8 text-center text-gray-500">
             <PhoneIcon className="w-12 h-12 mx-auto mb-3 text-gray-600" />
             <p className="text-sm">No sessions yet</p>
-            {isAdmin && (
+            {permissions?.canCreateSessions && (
               <button
                 onClick={onNewSession}
                 className="mt-3 px-4 py-2 bg-primary-500 text-white rounded-lg text-sm hover:bg-primary-600 transition"
@@ -176,7 +176,7 @@ export default function SessionsList({ onNewSession, isAdmin }) {
               onClick={() => handleSessionSelect(session)}
               onEdit={handleEditMetadata}
               onAssign={handleOpenAssignModal}
-              isAdmin={isAdmin}
+              permissions={permissions}
               isEditing={editingSession === session.id}
               customName={customName}
               setCustomName={setCustomName}
@@ -208,7 +208,7 @@ function SessionItem({
   onClick,
   onEdit,
   onAssign,
-  isAdmin,
+  permissions,
   isEditing,
   customName,
   setCustomName,
@@ -329,22 +329,26 @@ function SessionItem({
         </div>
 
         {/* Action Buttons */}
-        {isAdmin && (
+        {(permissions?.canAssignSessions || permissions?.canEditSessionMetadata) && (
           <div className="flex flex-col space-y-1">
-            <button
-              onClick={(e) => onAssign(session, e)}
-              className="opacity-0 group-hover:opacity-100 p-1 hover:bg-wa-panel rounded transition"
-              title="Assign session"
-            >
-              <UserGroupIcon className="w-4 h-4 text-primary-400" />
-            </button>
-            <button
-              onClick={(e) => onEdit(session, e)}
-              className="opacity-0 group-hover:opacity-100 p-1 hover:bg-wa-panel rounded transition"
-              title="Edit metadata"
-            >
-              <PencilIcon className="w-4 h-4 text-gray-400" />
-            </button>
+            {permissions?.canAssignSessions && (
+              <button
+                onClick={(e) => onAssign(session, e)}
+                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-wa-panel rounded transition"
+                title="Assign session"
+              >
+                <UserGroupIcon className="w-4 h-4 text-primary-400" />
+              </button>
+            )}
+            {permissions?.canEditSessionMetadata && (
+              <button
+                onClick={(e) => onEdit(session, e)}
+                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-wa-panel rounded transition"
+                title="Edit metadata"
+              >
+                <PencilIcon className="w-4 h-4 text-gray-400" />
+              </button>
+            )}
           </div>
         )}
       </div>
