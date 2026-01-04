@@ -1,39 +1,46 @@
-# Evolution API Bug Fix - Deployment Guide
+# WhatsApp CRM - Bug Fixes Deployment Guide
 
-## Problem Summary
+## Problems Fixed
 
-**Evolution API v1.8.4** has a critical bug where the `/chat/findMessages` endpoint **ignores the `remoteJid` filter** and returns ALL messages instead of filtering by chat.
+### 🐛 Problem 1: Evolution API Message Filter Bug
+**Evolution API v1.8.4** has a critical bug where `/chat/findMessages` endpoint **ignores the `remoteJid` filter** and returns ALL messages instead of filtering by chat.
 
-**Result:** During initial sync, all chats received the same messages (from contact 905050969166@s.whatsapp.net), causing data corruption.
+**Result:** All chats received the same messages (from contact 905050969166@s.whatsapp.net)
 
 **GitHub Issue:** https://github.com/EvolutionAPI/evolution-api/issues/1632
 
+### 🐛 Problem 2: Contact Name Corruption
+`processAndSaveMessage` was using `pushName` to update contact names on every message. In group chats, `pushName` is the LAST sender's name, causing "Musa Kerem Demirci" to overwrite many contacts.
+
+### 🐛 Problem 3: No Sender Info in Group Messages
+Group messages didn't show who sent each message - only the group name.
+
 ---
 
-## Fix Applied
+## Fixes Applied
 
-### Client-Side Filtering Workaround
+### ✅ Fix 1: Client-Side Message Filtering (Commit: 214b9ce)
+- `getChatMessages()` now fetches 10x more messages and filters client-side
+- Properly sorts by timestamp and limits results
+- **Temporary workaround** - Upgrade to Evolution API v2.3.7 recommended
 
-Modified `backend/src/config/evolution.js`:
-- `getChatMessages()` now fetches 10x more messages than needed
-- Filters messages client-side by matching `key.remoteJid`
-- Sorts by timestamp and limits to requested number
-- Adds detailed logging for debugging
+### ✅ Fix 2: Stop Using pushName for Contacts (Commit: 9918b3e)
+- Removed `ensure_contact_exists` call from message processing
+- Contact names now only set during initial chat sync (from `chat.name`)
+- `pushName` no longer overwrites contact names
 
-**This is a temporary workaround.** Recommended permanent fix: **Upgrade Evolution API to v2.3.7**
+### ✅ Fix 3: Add Sender Info to Group Messages (Commit: 9918b3e)
+- Incoming group messages now show sender: `[Name (Phone)]: message`
+- Example: `[Musa Kerem Demirci (905050969139)]: Hava soğuk`
 
 ---
 
 ## Deployment Steps
 
-### 1️⃣ Stop Current Sync (Important!)
-
-The corrupted sync is still running. Stop it by restarting the backend:
+### 1️⃣ SSH to Server
 
 ```bash
 ssh ubuntu@54.93.113.184
-cd /home/ubuntu/whatsapp-crm/backend
-pm2 restart whatsapp-backend
 ```
 
 ### 2️⃣ Pull Latest Code
@@ -44,32 +51,49 @@ git fetch origin claude/message-reconnect-gap-fill-z5U5W
 git pull origin claude/message-reconnect-gap-fill-z5U5W
 ```
 
-### 3️⃣ Clean Corrupted Messages
-
-Run the database cleanup migration:
-
-```bash
-# Connect to Supabase SQL Editor or use psql
-# Run the migration: supabase/migrations/999_cleanup_corrupted_messages.sql
-
-# OR use Supabase CLI:
-cd /home/ubuntu/whatsapp-crm
-npx supabase db push
+**Expected output:**
+```
+From http://...
+   415471e..9918b3e  claude/message-reconnect-gap-fill-z5U5W -> origin/claude/message-reconnect-gap-fill-z5U5W
+Updating 415471e..9918b3e
+Fast-forward
+ backend/src/config/evolution.js                | XX insertions(+), XX deletions(-)
+ backend/src/services/syncService.evolution.js | XX insertions(+), XX deletions(-)
 ```
 
-**Alternative:** Manually delete recent messages via SQL:
+### 3️⃣ Restart Backend
 
+```bash
+cd backend
+pm2 restart whatsapp-backend
+pm2 logs whatsapp-backend --lines 30
+```
+
+**Check logs** - you should see the backend starting successfully.
+
+### 4️⃣ Clean Corrupted Database (CRITICAL!)
+
+**Go to Supabase Dashboard → SQL Editor**
+
+**OPTION A: Delete ALL messages (recommended - cleanest)**
+```sql
+TRUNCATE TABLE messages CASCADE;
+```
+
+**OPTION B: Delete only recent messages (last 24 hours)**
 ```sql
 DELETE FROM messages WHERE created_at > NOW() - INTERVAL '24 hours';
 ```
 
-### 4️⃣ Restart Backend with Fix
-
-```bash
-cd /home/ubuntu/whatsapp-crm/backend
-pm2 restart whatsapp-backend
-pm2 logs whatsapp-backend --lines 50
+**OPTION C: Fix corrupted contact names**
+```sql
+-- Reset "Musa Kerem Demirci" names to NULL (will show phone number)
+UPDATE contacts
+SET name = NULL
+WHERE name = 'Musa Kerem Demirci';
 ```
+
+**Recommended: Run OPTION A + OPTION C** to fully clean corrupted data.
 
 ### 5️⃣ Test Initial Sync
 
@@ -135,8 +159,9 @@ Instead of syncing from Evolution API's internal database, capture messages in r
 
 **Check:**
 1. Did you restart PM2 after pulling code?
-2. Are you running the latest commit (214b9ce)?
+2. Are you running the latest commit (9918b3e)?
 3. Check logs for "with client-side filter workaround" message
+4. Did you clean the database (TRUNCATE messages)?
 
 ### Issue: Sync is slow
 
